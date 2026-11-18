@@ -37,6 +37,50 @@ struct TreeDef {
     TileCoord Tile() const { return {static_cast<int>(x), static_cast<int>(z)}; }
 };
 
+// A fishing spot: a swirl of bubbles on a water tile ('~') next to the bank. You stand on the shore and net fish from it.
+struct SpotDef {
+    float x = 0, z = 0;       // world position in tiles (tile centre = +0.5)
+    std::string kind;         // "net" for now (rods, cages... later)
+    TileCoord Tile() const { return {static_cast<int>(x), static_cast<int>(z)}; }
+};
+
+// A rock you can mine. Its tile is marked 'o' (blocked); you stand next to it. kind = "copper", "tin", "iron", "coal", "mithril".
+struct RockDef {
+    float x = 0, z = 0;       // world position in tiles (tile centre = +0.5)
+    std::string kind;
+    float yawDegrees = 0.0f;
+    TileCoord Tile() const { return {static_cast<int>(x), static_cast<int>(z)}; }
+};
+
+// Something a smith uses: kind = "furnace" (smelts ore into bars) or "anvil" (hammers bars into gear). One blocked tile.
+struct StationDef {
+    float x = 0, z = 0;
+    std::string kind;
+    float yawDegrees = 0.0f;
+    TileCoord Tile() const { return {static_cast<int>(x), static_cast<int>(z)}; }
+};
+
+// A human standing in the world (shopkeeper, smith, villager). `key` names a row of the table in game/People.cpp.
+struct PersonDef {
+    std::string key;
+    float x = 0, z = 0;
+    float yawDegrees = 0.0f;   // 0 = facing south (+z), 90 = east
+    TileCoord Tile() const { return {static_cast<int>(x), static_cast<int>(z)}; }
+};
+
+// A fenced area (chicken coop, cow pen). Animals that live there never leave `rect` (x1/z1 exclusive).
+struct PenDef {
+    std::string name;
+    TileRect rect;
+};
+
+// An animal that lives in a pen. species is "chicken", "cow" or "calf".
+struct NpcDef {
+    std::string species;
+    float x = 0, z = 0;       // starting position (tile centre = +0.5)
+    std::string pen;          // name of the PenDef it lives in
+};
+
 class TileMap {
 public:
     // Parses the text produced by tools/build_town.py. Returns false and fills err on bad input.
@@ -52,10 +96,22 @@ public:
     bool Walkable(int x, int z) const;
     bool Walkable(TileCoord t) const { return Walkable(t.x, t.z); }
 
+    // Things that appear while playing (a campfire) block their tile on top of the map's own blocking.
+    void SetBlocked(TileCoord t, bool blocked);
+    bool IsBlocked(TileCoord t) const;
+
     TileCoord Spawn() const { return spawn_; }
     const std::vector<RoofDef>& Roofs() const { return roofs_; }
     const std::vector<AreaDef>& Areas() const { return areas_; }
     const std::vector<TreeDef>& Trees() const { return trees_; }
+    const std::vector<SpotDef>& Spots() const { return spots_; }
+    const std::vector<RockDef>& Rocks() const { return rocks_; }
+    const std::vector<StationDef>& Stations() const { return stations_; }
+    const std::vector<PersonDef>& Persons() const { return persons_; }
+    const std::vector<PenDef>& Pens() const { return pens_; }
+    const std::vector<NpcDef>& Npcs() const { return npcs_; }
+    // The pen with this name, or nullptr.
+    const PenDef* FindPen(const std::string& name) const;
 
     // Name of the last area containing the tile, or empty string.
     const std::string& AreaAt(int x, int z) const;
@@ -68,6 +124,13 @@ private:
     std::vector<RoofDef> roofs_;
     std::vector<AreaDef> areas_;
     std::vector<TreeDef> trees_;
+    std::vector<SpotDef> spots_;
+    std::vector<RockDef> rocks_;
+    std::vector<StationDef> stations_;
+    std::vector<PersonDef> persons_;
+    std::vector<PenDef> pens_;
+    std::vector<NpcDef> npcs_;
+    std::vector<char> extraBlocked_;   // runtime blocking (campfires); empty until first used
 };
 
 }  // namespace journey

@@ -12,15 +12,15 @@ namespace journey {
 
 namespace {
 constexpr int kChunkTiles = 16;
-constexpr int kChunkGrid = 4;
 constexpr float kDrawRadius = 62.0f;    // a little past the fog end so nothing pops
 constexpr float kShadowRadius = 44.0f;  // chunks that can cast into the shadow map
 }  // namespace
 
 bool TownRenderer::Load(const TileMap& map, const LitShader& shader, const char* dir) {
     Unload();
-    for (int cz = 0; cz < kChunkGrid; ++cz) {
-        for (int cx = 0; cx < kChunkGrid; ++cx) {
+    const int chunksX = (map.Width() + kChunkTiles - 1) / kChunkTiles, chunksZ = (map.Height() + kChunkTiles - 1) / kChunkTiles;
+    for (int cz = 0; cz < chunksZ; ++cz) {
+        for (int cx = 0; cx < chunksX; ++cx) {
             const char* path = TextFormat("%s/chunk_%d_%d.glb", dir, cx, cz);
             Chunk c;
             c.model = LoadModel(path);

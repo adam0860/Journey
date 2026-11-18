@@ -5,8 +5,12 @@ C++17 + [raylib](https://www.raylib.com), art built procedurally in Blender.
 Design doc: *Journey - Game Design Document* (kept in Claude Docs).
 
 **Status: prototype.** You can walk around Castle Town (castle, throne hall, bank, inn, market square,
-houses, river) by clicking, and chop trees for logs (Woodcutting XP, bag, skills tab; stumps regrow after 3 minutes).
-No combat or NPCs yet - see the milestone list in the GDD.
+houses, river) by clicking, chop trees for logs, net fish at the river, light fires and cook, mine ore in the quarry, smelt it
+in the furnace and smith weapons and armour at the anvils, wear them, and fight the chickens, cows and calves in their pens
+(turn-based combat with hit splats, loot piles, bury bones, weapon swings and shield blocks), fight goblins for coins, spend them in
+the shops, and walk the long road south to the village of Millbrook (five more shops, a second smithy and mine, a farm, a windmill) -
+14 skills, bag, skills, gear and combat tabs.
+No quests or human NPCs yet - see the milestone list in the GDD.
 
 ## Run it
 
@@ -18,8 +22,21 @@ Windows: unzip `journey-windows.zip` and run `journey.exe` (keep the `assets` fo
 | Drag | rotate camera |
 | Mouse wheel / pinch | zoom |
 | Arrow keys or Q / E | rotate; Up/Down or +/- zoom |
-| Tap a tree | walk up and chop it (logs go in the Bag tab, XP in the Skills tab) |
-| Bag / Skills tabs | tap to open or close; tap a bag item to drop it |
+| Tap a tree | walk up and chop it with your axe (logs go in the Bag tab, XP in the Skills tab) |
+| Tap a swirl in the river | stand on the bank / pier and net shrimps (anchovies from Fishing 15) until the bag is full |
+| Bag tab | tap an item to select it, then its buttons: **Eat**, **Bury** (bones), **Cook**, **Light** (logs + tinderbox), **Wield** / **Wear**, **Use** (with another item, a fire, the furnace or an anvil), **Drop**, **Examine** |
+| Tap a fire | cook all the raw food in your bag on it (low levels burn some) |
+| Tap a rock in the quarry | mine it with your pickaxe: copper and tin (Mining 1), iron (15), coal (30), mithril (55). Each rock gives one ore, then grows back |
+| Tap the furnace | choose a bar: bronze (copper + tin), iron (50% fail), steel (iron + 2 coal), mithril (+ 4 coal) |
+| Tap an anvil | needs the hammer and bars: pick a metal tab, then a dagger, sword, battleaxe, mace, helm, kiteshield, platelegs, platebody or pickaxe |
+| Tap a shopkeeper (or hold for **Trade**) | walk up and open the shop window: **Buy** and **Sell** tabs, quantity 1 / 5 / all. Shops pay a share of an item's value and put what you sell on their shelves |
+| Goblins (the camp beside the road south) | they attack anyone who comes within 3 tiles (until you are much stronger than them) and drop coins and bones, now and then a bronze or iron weapon |
+| Coins | shown top-left next to your hit points; they stack in one bag slot |
+| Gear tab | what you wear: tap a piece to take it off. Bag items have **Wield** / **Wear** (needs Attack / Defence 1, 5, 20, 30 for bronze, iron, steel, mithril) |
+| Tap an animal | attack it: you and it take turns; red numbers are damage, blue 0 is a miss; it drops a pile - tap the pile to take it |
+| Hold a finger (or right-click) | the full menu for what is there: Attack Chicken (level-1), Examine, Take, Walk here... |
+| Combat tab | pick Accurate / Aggressive / Defensive / Controlled (which skill you train) |
+| Skills tab | tap to open or close |
 | F3 | debug: collision grid + path |
 
 Walk into the bank, inn or throne hall and their roofs disappear, like the original.
@@ -55,7 +72,7 @@ Edit the layout in `build()` in `tools/build_town.py` (buildings are one-liners 
 ```
 src/world/      TileMap, Pathfinder           pure C++, no raylib, unit tested
 src/game/       Player                        tile pathing + smooth movement
-src/render/     LitShader, TownRenderer, CameraRig, HeroRenderer
+src/render/     LitShader, TownRenderer, CameraRig, CharacterRenderer, AnimalRenderer, PropRenderer
 src/platform/   PointerInput                  mouse + touch behind one interface
 src/ui/         Hud                           chat box, tab bar, area banner
 tools/          Blender scripts

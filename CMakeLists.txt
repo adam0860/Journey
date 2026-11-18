@@ -31,7 +31,11 @@ endif()
 # ---- game core: pure C++, no raylib, unit tested ---------------------------------
 add_library(journey_core STATIC
   src/world/TileMap.cpp src/world/Pathfinder.cpp
-  src/game/Skills.cpp src/game/Inventory.cpp src/game/Forest.cpp src/game/Woodcutting.cpp src/game/Progress.cpp)
+  src/game/Skills.cpp src/game/Inventory.cpp src/game/Forest.cpp src/game/Woodcutting.cpp src/game/Progress.cpp
+  src/game/Fishing.cpp src/game/Fires.cpp src/game/Cooking.cpp src/game/Player.cpp src/game/Gameplay.cpp
+  src/game/Combat.cpp src/game/Npc.cpp src/game/GroundItems.cpp
+  src/game/Gear.cpp src/game/Equipment.cpp src/game/Mining.cpp src/game/Smithing.cpp
+  src/game/People.cpp src/game/Shops.cpp)
 target_include_directories(journey_core PUBLIC src)
 if(MSVC)
   target_compile_options(journey_core PRIVATE /W4)
@@ -42,7 +46,6 @@ endif()
 # ---- the game -----------------------------------------------------------------------
 set(JOURNEY_SOURCES
   src/main.cpp
-  src/game/Player.cpp
   src/platform/PointerInput.cpp
   src/render/CameraRig.cpp
   src/render/CharacterRenderer.cpp
@@ -50,6 +53,8 @@ set(JOURNEY_SOURCES
   src/render/LitShader.cpp
   src/render/TextureCache.cpp
   src/render/TownRenderer.cpp
+  src/render/PropRenderer.cpp
+  src/render/AnimalRenderer.cpp
   src/ui/CharacterCreator.cpp
   src/ui/Hud.cpp)
 if(ANDROID)

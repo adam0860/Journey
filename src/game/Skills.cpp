@@ -8,9 +8,9 @@ namespace journey {
 
 namespace {
 const char* kNames[kSkillCount] = {"Attack", "Strength", "Defence", "Hitpoints", "Ranged", "Magic", "Woodcutting",
-                                   "Mining", "Fishing",  "Cooking", "Smithing",  "Crafting", "Firemaking"};
+                                   "Mining", "Fishing",  "Cooking", "Smithing",  "Crafting", "Firemaking", "Prayer"};
 const char* kKeys[kSkillCount] = {"attack", "strength", "defence", "hitpoints", "ranged", "magic", "woodcutting",
-                                  "mining", "fishing",  "cooking", "smithing",  "crafting", "firemaking"};
+                                  "mining", "fishing",  "cooking", "smithing",  "crafting", "firemaking", "prayer"};
 
 // xp[level-1] = total XP for that level. Built once from the RuneScape formula:
 //   points(L) = sum_{i=1}^{L-1} floor(i + 300 * 2^(i/7));   xp = floor(points / 4)
@@ -43,6 +43,11 @@ int LevelForXp(int64_t xp) {
     return std::max(1, static_cast<int>(it - t.begin()));
 }
 
+Skills::Skills() {
+    SetXp(Skill::Hitpoints, XpForLevel(kStartHitpoints));
+    hp_ = MaxHp();
+}
+
 void Skills::Progress(Skill s, int64_t* into, int64_t* needed) const {
     const int lv = Level(s);
     if (lv >= kMaxLevel) {
@@ -60,6 +65,7 @@ bool Skills::AddXp(Skill s, int64_t amount, int* newLevel) {
     xp_[i] = std::min(kMaxXp, xp_[i] + amount);
     const int lv = LevelForXp(xp_[i]);
     if (lv > level_[i]) {
+        if (s == Skill::Hitpoints) hp_ += lv - level_[i];   // a new Hitpoints level heals you by the same amount
         level_[i] = lv;
         if (newLevel) *newLevel = lv;
         return true;
@@ -70,7 +76,25 @@ bool Skills::AddXp(Skill s, int64_t amount, int* newLevel) {
 void Skills::SetXp(Skill s, int64_t xp) {
     const int i = Index(s);
     xp_[i] = std::clamp<int64_t>(xp, 0, kMaxXp);
+    if (s == Skill::Hitpoints) xp_[i] = std::max(xp_[i], XpForLevel(kStartHitpoints));   // never below the starting 10
     level_[i] = LevelForXp(xp_[i]);
+    hp_ = std::min(hp_, MaxHp());
+}
+
+void Skills::SetHp(int hp) {
+    hp_ = std::clamp(hp, 0, MaxHp());
+}
+
+int Skills::Heal(int amount) {
+    const int before = hp_;
+    SetHp(hp_ + std::max(0, amount));
+    return hp_ - before;
+}
+
+int Skills::CombatLevel() const {
+    const double base = 0.25 * (Level(Skill::Defence) + Level(Skill::Hitpoints) + Level(Skill::Prayer) / 2);
+    const double melee = 0.325 * (Level(Skill::Attack) + Level(Skill::Strength));
+    return static_cast<int>(std::floor(base + melee));
 }
 
 int Skills::TotalLevel() const {

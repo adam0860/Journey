@@ -1,5 +1,5 @@
 // Skills and experience. Pure C++ (no raylib) so it is unit tested.
-// Every skill starts at level 1 and tops out at 99, using the classic RuneScape experience curve.
+// Every skill starts at level 1 (Hitpoints at 10) and tops out at 99, using the classic RuneScape experience curve.
 #pragma once
 #include <array>
 #include <cstdint>
@@ -8,7 +8,7 @@ namespace journey {
 
 enum class Skill : int {
     Attack, Strength, Defence, Hitpoints, Ranged, Magic,
-    Woodcutting, Mining, Fishing, Cooking, Smithing, Crafting, Firemaking,
+    Woodcutting, Mining, Fishing, Cooking, Smithing, Crafting, Firemaking, Prayer,
     Count
 };
 constexpr int kSkillCount = static_cast<int>(Skill::Count);
@@ -23,8 +23,11 @@ int64_t XpForLevel(int level);
 // Level (1..99) for an XP total.
 int LevelForXp(int64_t xp);
 
+constexpr int kStartHitpoints = 10;
+
 class Skills {
 public:
+    Skills();
     int Level(Skill s) const { return level_[Index(s)]; }
     int64_t Xp(Skill s) const { return xp_[Index(s)]; }
     // XP into the current level and how much that level needs (for progress bars). At 99: 1/1.
@@ -38,6 +41,15 @@ public:
     int TotalLevel() const;
     int64_t TotalXp() const;
 
+    // ---- hit points: the Hitpoints skill level is the maximum, Hp() is what you have right now ----
+    int Hp() const { return hp_; }
+    int MaxHp() const { return Level(Skill::Hitpoints); }
+    void SetHp(int hp);                 // clamps to 0..MaxHp()
+    int Heal(int amount);               // returns how many points were actually restored
+    void Hurt(int amount) { SetHp(hp_ - amount); }
+    // Classic combat level: 0.25 * (Defence + Hitpoints + Prayer/2) + 0.325 * (Attack + Strength), rounded down.
+    int CombatLevel() const;
+
 private:
     static int Index(Skill s) { return static_cast<int>(s); }
     std::array<int, kSkillCount> level_ = [] {
@@ -46,6 +58,7 @@ private:
         return a;
     }();
     std::array<int64_t, kSkillCount> xp_{};
+    int hp_ = kStartHitpoints;
 };
 
 }  // namespace journey

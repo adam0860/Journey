@@ -17,7 +17,22 @@ std::string Trim(const std::string& s) {
 
 bool TileMap::Walkable(int x, int z) const {
     char c = At(x, z);
-    return c == '.' || c == 'D';
+    if (c != '.' && c != 'D') return false;
+    return !IsBlocked({x, z});
+}
+
+void TileMap::SetBlocked(TileCoord t, bool blocked) {
+    if (!InBounds(t.x, t.z)) return;
+    if (extraBlocked_.empty()) {
+        if (!blocked) return;
+        extraBlocked_.assign(static_cast<size_t>(width_) * height_, 0);
+    }
+    extraBlocked_[static_cast<size_t>(t.z) * width_ + t.x] = blocked ? 1 : 0;
+}
+
+bool TileMap::IsBlocked(TileCoord t) const {
+    if (extraBlocked_.empty() || !InBounds(t.x, t.z)) return false;
+    return extraBlocked_[static_cast<size_t>(t.z) * width_ + t.x] != 0;
 }
 
 bool TileMap::ParseText(const std::string& text, std::string* err) {
@@ -26,6 +41,13 @@ bool TileMap::ParseText(const std::string& text, std::string* err) {
     roofs_.clear();
     areas_.clear();
     trees_.clear();
+    spots_.clear();
+    rocks_.clear();
+    stations_.clear();
+    persons_.clear();
+    pens_.clear();
+    npcs_.clear();
+    extraBlocked_.clear();
     spawn_ = {};
 
     std::istringstream in(text);
@@ -63,6 +85,30 @@ bool TileMap::ParseText(const std::string& text, std::string* err) {
             TreeDef t;
             ls >> t.x >> t.z >> t.kind >> t.scale >> t.yawDegrees;
             if (!ls.fail()) trees_.push_back(t);
+        } else if (key == "@spot") {
+            SpotDef s;
+            ls >> s.x >> s.z >> s.kind;
+            if (!ls.fail()) spots_.push_back(s);
+        } else if (key == "@rock") {
+            RockDef r;
+            ls >> r.x >> r.z >> r.kind >> r.yawDegrees;
+            if (!ls.fail()) rocks_.push_back(r);
+        } else if (key == "@station") {
+            StationDef st;
+            ls >> st.kind >> st.x >> st.z >> st.yawDegrees;
+            if (!ls.fail()) stations_.push_back(st);
+        } else if (key == "@person") {
+            PersonDef p;
+            ls >> p.key >> p.x >> p.z >> p.yawDegrees;
+            if (!ls.fail()) persons_.push_back(p);
+        } else if (key == "@pen") {
+            PenDef p;
+            ls >> p.name >> p.rect.x0 >> p.rect.z0 >> p.rect.x1 >> p.rect.z1;
+            if (!ls.fail()) pens_.push_back(p);
+        } else if (key == "@npc") {
+            NpcDef n;
+            ls >> n.species >> n.x >> n.z >> n.pen;
+            if (!ls.fail()) npcs_.push_back(n);
         } else if (key == "@rows") {
             rows = true;
         }
@@ -95,6 +141,12 @@ TileMap TileMap::FromRows(const std::vector<std::string>& rows) {
     m.width_ = rows.empty() ? 0 : static_cast<int>(rows[0].size());
     for (const auto& r : rows) m.tiles_.insert(m.tiles_.end(), r.begin(), r.end());
     return m;
+}
+
+const PenDef* TileMap::FindPen(const std::string& name) const {
+    for (const PenDef& p : pens_)
+        if (p.name == name) return &p;
+    return nullptr;
 }
 
 const std::string& TileMap::AreaAt(int x, int z) const {

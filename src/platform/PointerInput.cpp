@@ -6,6 +6,7 @@ namespace journey {
 
 namespace {
 constexpr float kDragPixels = 10.0f;      // movement before a press becomes a camera drag
+constexpr double kLongPressSeconds = 0.5; // hold still this long and it is a long press
 constexpr float kDegreesPerPixel = 0.35f;
 constexpr float kWheelZoom = 1.4f;        // distance units per mouse wheel notch
 constexpr float kPinchZoom = 0.03f;       // distance units per pixel of pinch
@@ -47,18 +48,30 @@ PointerFrame PointerInput::Poll() {
 
     // --- single pointer: mouse, or one finger ---
     const Vector2 m = GetMousePosition();
+    out.hoverPos = m;
+    if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
+        out.context = true;
+        out.contextPos = m;
+    }
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
         pressing_ = true;
         dragging_ = false;
+        contextFired_ = false;
+        pressTime_ = GetTime();
         down_ = last_ = m;
     }
     if (pressing_ && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
         if (!dragging_ && Dist(m, down_) > kDragPixels * dpi) dragging_ = true;
         if (dragging_) out.rotateDegrees = -(m.x - last_.x) * kDegreesPerPixel;
         last_ = m;
+        if (!dragging_ && !contextFired_ && GetTime() - pressTime_ >= kLongPressSeconds) {   // held still: long press
+            contextFired_ = true;
+            out.context = true;
+            out.contextPos = down_;
+        }
     }
     if (pressing_ && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
-        if (!dragging_) {
+        if (!dragging_ && !contextFired_) {
             out.tap = true;
             out.tapPos = m;
         }
