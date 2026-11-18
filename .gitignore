@@ -1,0 +1,13 @@
+build/
+build-win/
+build-*/
+*.png.bak
+.vs/
+.vscode/
+.gradle/
+local.properties
+*.apk
+android/app/build/
+android/app/.cxx/
+android/build/
+.idea/
