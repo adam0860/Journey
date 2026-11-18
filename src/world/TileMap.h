@@ -28,6 +28,15 @@ struct AreaDef {
     TileRect rect;
 };
 
+// A choppable tree. Its tile is marked 'T' (blocked) in the grid; the game draws the tree model itself.
+struct TreeDef {
+    float x = 0, z = 0;       // world position in tiles (tile centre = +0.5)
+    std::string kind;         // model is tree_<kind>.glb
+    float scale = 1.0f;
+    float yawDegrees = 0.0f;
+    TileCoord Tile() const { return {static_cast<int>(x), static_cast<int>(z)}; }
+};
+
 class TileMap {
 public:
     // Parses the text produced by tools/build_town.py. Returns false and fills err on bad input.
@@ -46,6 +55,7 @@ public:
     TileCoord Spawn() const { return spawn_; }
     const std::vector<RoofDef>& Roofs() const { return roofs_; }
     const std::vector<AreaDef>& Areas() const { return areas_; }
+    const std::vector<TreeDef>& Trees() const { return trees_; }
 
     // Name of the last area containing the tile, or empty string.
     const std::string& AreaAt(int x, int z) const;
@@ -57,6 +67,7 @@ private:
     TileCoord spawn_{};
     std::vector<RoofDef> roofs_;
     std::vector<AreaDef> areas_;
+    std::vector<TreeDef> trees_;
 };
 
 }  // namespace journey

@@ -1,9 +1,12 @@
 #include "render/TownRenderer.h"
 
+#include <algorithm>
 #include <string>
 
 #include <cmath>
 #include <cstdio>
+
+#include "raymath.h"
 
 namespace journey {
 
@@ -59,6 +62,21 @@ bool TownRenderer::Load(const TileMap& map, const LitShader& shader, const char*
         shader.ApplyTo(roof.model);
         roofs_.push_back(roof);
     }
+    // Tree + stump models (one per kind used by the map, plus the stump).
+    std::vector<std::string> kinds = {"stump"};
+    for (const TreeDef& t : map.Trees())
+        if (std::find(kinds.begin(), kinds.end(), t.kind) == kinds.end()) kinds.push_back(t.kind);
+    for (const std::string& k : kinds) {
+        const std::string file = (k == "stump") ? "stump" : "tree_" + k;
+        Model m = LoadModel(TextFormat("%s/%s.glb", dir, file.c_str()));
+        if (m.meshCount == 0) {
+            TraceLog(LOG_WARNING, "TOWN: missing %s/%s.glb", dir, file.c_str());
+            continue;
+        }
+        textures_.Share(m);
+        shader.ApplyTo(m);
+        treeModels_[k] = m;
+    }
     TraceLog(LOG_INFO, "TOWN[%s]: %d chunks, %d roofs, %d skirt pieces; %d unique textures (%d duplicates merged)", dir,
              (int)chunks_.size(), (int)roofs_.size(), (int)skirts_.size(), textures_.UniqueCount(),
              textures_.DuplicatesDropped());
@@ -69,12 +87,15 @@ void TownRenderer::SetShadowSampling(const LitShader& lit, bool sample) {
     for (auto& c : chunks_) lit.SetShadowSampling(c.model, sample);
     for (auto& r : roofs_) lit.SetShadowSampling(r.model, sample);
     for (auto& s : skirts_) lit.SetShadowSampling(s, sample);
+    for (auto& kv : treeModels_) lit.SetShadowSampling(kv.second, sample);
 }
 
 void TownRenderer::Unload() {
     for (auto& c : chunks_) { textures_.Detach(c.model); UnloadModel(c.model); }
     for (auto& r : roofs_) { textures_.Detach(r.model); UnloadModel(r.model); }
     for (auto& s : skirts_) { textures_.Detach(s); UnloadModel(s); }
+    for (auto& kv : treeModels_) { textures_.Detach(kv.second); UnloadModel(kv.second); }
+    treeModels_.clear();
     textures_.UnloadAll();
     chunks_.clear();
     roofs_.clear();
@@ -97,6 +118,41 @@ void TownRenderer::Draw(float focusX, float focusZ, TileCoord playerTile, bool s
         // Inside = in the footprint (door tiles included). Step back out and the roof returns.
         if (r.rect.Contains(playerTile.x, playerTile.z)) continue;
         DrawModel(r.model, {0, 0, 0}, 1.0f, WHITE);
+    }
+}
+
+void TownRenderer::DrawTrees(const Forest& forest, Vector3 camPos, Vector3 camTarget, float focusX, float focusZ,
+                             bool shadowCaster, bool blobShadows) const {
+    const float radius = shadowCaster ? kShadowRadius : kDrawRadius;
+    // Camera heading on the ground; trees well behind the camera are not on screen.
+    float fx = camTarget.x - camPos.x, fz = camTarget.z - camPos.z;
+    const float fl = std::sqrt(fx * fx + fz * fz);
+    if (fl > 1e-4f) { fx /= fl; fz /= fl; }
+    for (const TreeState& t : forest.Trees()) {
+        const float dx = t.def.x - focusX, dz = t.def.z - focusZ;
+        if (dx * dx + dz * dz > radius * radius) continue;
+        if (!shadowCaster && (t.def.x - camPos.x) * fx + (t.def.z - camPos.z) * fz < -4.0f) continue;
+        auto it = treeModels_.find(t.stump ? "stump" : t.def.kind);
+        if (it == treeModels_.end()) continue;
+        // A freshly regrown tree grows from a sapling (ease-out).
+        const float g = t.stump ? 1.0f : t.growAnim;
+        const float grow = 0.2f + 0.8f * (1.0f - (1.0f - g) * (1.0f - g));
+        const float sc = t.def.scale * grow;
+        Model& m = it->second;
+        Matrix tr = MatrixScale(sc, sc, sc);
+        tr = MatrixMultiply(tr, MatrixRotateY(t.def.yawDegrees * DEG2RAD));
+        tr = MatrixMultiply(tr, MatrixTranslate(t.def.x, 0.0f, t.def.z));
+        m.transform = tr;
+        DrawModel(m, {0, 0, 0}, 1.0f, WHITE);
+    }
+    if (blobShadows && !shadowCaster) {
+        for (const TreeState& t : forest.Trees()) {
+            const float dx = t.def.x - focusX, dz = t.def.z - focusZ;
+            if (dx * dx + dz * dz > radius * radius) continue;
+            if ((t.def.x - camPos.x) * fx + (t.def.z - camPos.z) * fz < -4.0f) continue;
+            const float r = (t.stump ? 0.55f : 1.25f * (0.2f + 0.8f * t.growAnim)) * t.def.scale;
+            DrawCylinder({t.def.x, 0.02f, t.def.z}, r, r, 0.01f, 14, Fade(BLACK, t.stump ? 0.22f : 0.26f));
+        }
     }
 }
 

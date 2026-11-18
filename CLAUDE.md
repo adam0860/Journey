@@ -14,6 +14,13 @@ but is learning, so explain non-obvious choices briefly.
   15 hair styles (men-only / women-only / unisex via `for=` in the catalog), 5 shirts, 5 pants, 5 shoes, each with colours,
   Randomize, Preview walk, drag to spin. Saved to `journey_save.cfg`. F6 or the HUD "Menu" tab reopens it.
   The name is NOT shown above the character (Adam asked for that to be removed).
+* **Gameplay v1 (woodcutting):** Bag tab (28 slots, tap an item to drop it) and Skills tab (13 skills, all start at level 1, cap 99,
+  RuneScape XP curve). Tap a tree: hero walks next to it and chops (0.6 s ticks, chance rises with level, one log per tree, 25 xp).
+  The tree becomes a stump and regrows after 3 minutes (`Forest::kRegrowSeconds`). Progress saves to `journey_progress.cfg`.
+  Logic is pure C++ in `src/game/` (Skills, Inventory, Forest, Woodcutting, Progress) with unit tests in `tests/test_core.cpp`.
+* Choppable trees are NOT baked into the town models: `build_town.py` exports `tree_round/pine/tall.glb` + `stump.glb` and writes
+  `@tree x z kind scale yaw` lines into town.map; `TownRenderer::DrawTrees` draws them from `Forest` state. The far forest ring is still baked.
+  (Tree ground shadows are a runtime blob disc, since the baked shadows no longer include them.)
 * On-screen keyboard in the creator for phones (tap the name box). Android defaults to style B.
 
 ## Layout
@@ -30,6 +37,12 @@ but is learning, so explain non-obvious choices briefly.
 * Windows (MSVC or MinGW) / Linux: `cmake -B build -G Ninja && cmake --build build`, run `build/journey` (assets are copied next to it).
 * Android: open `android/` in Android Studio, Run. Needs SDK Platform 34, NDK (side by side), CMake. See `android/README.md`.
 * Regenerate models (needs Blender 4+/`bpy`): `python tools/build_character.py`, `python tools/build_town.py --style b`.
+  Without bpy installed, use Blender itself: `blender -b --python tools/build_town.py -- --style b` (run for both `--style a` and `b`;
+  both rewrite town.map). Blender's Python has no Pillow - build_town.py falls back to bpy for texture PNGs.
+* Windows build on Adam's PC: `cmake -S . -B build` (Visual Studio generator) then `cmake --build build --config Release`; tests:
+  `build\Release	est_core.exe assets\maps	own.map`. Android on his PC: Gradle 9.3.1 + AGP 9.1.0; JDK doesn't trust his network's
+  certificates, so command-line Gradle needs `JAVA_TOOL_OPTIONS=-Djavax.net.ssl.trustStoreType=Windows-ROOT` (Android Studio is fine).
+* Android: raylib is patched to request a 24-bit depth buffer and near/far clip is 1.0/400 (16-bit depth + 0.01 near caused z-fighting on his phone).
 
 ## Gotchas learned the hard way
 * raylib: each primitive must have < 65k vertices (16-bit indices). `FileExists()` can't see Android APK assets - don't use it for assets.
@@ -41,11 +54,11 @@ but is learning, so explain non-obvious choices briefly.
   the pelvis/thigh/shirt-hem proportions were tuned carefully - re-render close-ups after changing `TORSO`/`LEG` tables.
 
 ## Honest status
-* Windows exe: compiled, never run on real Windows by Claude. Android: **never built or run** (the cloud sandbox could not reach
-  Google's SDK hosts). First job on Adam's PC: build the APK, run on his phone, fix whatever the Logcat shows.
+* Windows and Android both build on Adam's PC and the game runs on his phone (z-fighting fixed). Tree-chopping is verified on desktop
+  with screenshots; the phone build of it has not been tried yet.
 * Known polish: puffy shoulders / mannequin proportions, weak male-vs-female body difference, Side Part and Afro hair are the roughest.
 
 ## Likely next steps (Adam's order)
-1. Get the Android build running on his phone and check frame rate (tell Claude the phone model).
-2. Gameplay: woodcutting, NPCs, monsters, "The Abyss" danger zone, top-3-items-kept-on-death rule, inventory/skills tabs.
+1. (done) Android build runs on his phone.
+2. Gameplay: more skills on the same pattern (mining, fishing...), NPCs, monsters, "The Abyss" danger zone, top-3-items-kept-on-death rule.
 3. Procedural music, more areas, body/hair polish.

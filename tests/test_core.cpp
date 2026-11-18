@@ -5,6 +5,11 @@
 #include <sstream>
 #include <string>
 
+#include "game/Forest.h"
+#include "game/Inventory.h"
+#include "game/Progress.h"
+#include "game/Skills.h"
+#include "game/Woodcutting.h"
 #include "world/Pathfinder.h"
 #include "world/TileMap.h"
 
@@ -101,6 +106,152 @@ static void TestParse() {
     CHECK(!m.ParseText("@size 9 9\n@rows\n##\n##\n", &err));  // @size mismatch is rejected
 }
 
+// ---- skills, bag, trees, chopping --------------------------------------------------------------
+static void TestXpTable() {
+    CHECK(XpForLevel(1) == 0);
+    CHECK(XpForLevel(2) == 83);
+    CHECK(XpForLevel(10) == 1154);
+    CHECK(XpForLevel(50) == 101333);
+    CHECK(XpForLevel(99) == 13034431);
+    CHECK(LevelForXp(0) == 1);
+    CHECK(LevelForXp(82) == 1);
+    CHECK(LevelForXp(83) == 2);
+    CHECK(LevelForXp(13034430) == 98);
+    CHECK(LevelForXp(13034431) == 99);
+    CHECK(LevelForXp(200000000) == 99);   // never above 99
+    for (int l = 2; l <= 99; ++l) CHECK(XpForLevel(l) > XpForLevel(l - 1));
+}
+
+static void TestSkills() {
+    Skills s;
+    for (int i = 0; i < kSkillCount; ++i) CHECK(s.Level(static_cast<Skill>(i)) == 1 && s.Xp(static_cast<Skill>(i)) == 0);
+    CHECK(s.TotalLevel() == kSkillCount);
+    int lv = 0;
+    CHECK(!s.AddXp(Skill::Woodcutting, 25, &lv));
+    CHECK(s.Level(Skill::Woodcutting) == 1);
+    CHECK(s.AddXp(Skill::Woodcutting, 58, &lv));   // 25 + 58 = 83 -> level 2
+    CHECK(lv == 2 && s.Level(Skill::Woodcutting) == 2);
+    CHECK(s.Level(Skill::Mining) == 1);             // other skills untouched
+    int64_t into = 0, need = 0;
+    s.Progress(Skill::Woodcutting, &into, &need);
+    CHECK(into == 0 && need == XpForLevel(3) - XpForLevel(2));
+    s.AddXp(Skill::Woodcutting, 1000000000);        // absurd amount: clamps to 200M / level 99
+    CHECK(s.Xp(Skill::Woodcutting) == kMaxXp && s.Level(Skill::Woodcutting) == 99);
+    s.Progress(Skill::Woodcutting, &into, &need);
+    CHECK(into == need);
+    CHECK(!s.AddXp(Skill::Woodcutting, 5));
+    CHECK(!s.AddXp(Skill::Mining, -5));             // negative / zero XP is ignored
+}
+
+static void TestInventory() {
+    Inventory bag;
+    CHECK(bag.FreeSlots() == Inventory::kSlots && !bag.Full());
+    CHECK(bag.Add(Item::Logs) == 1);
+    CHECK(bag.Count(Item::Logs) == 1 && bag.Slot(0).item == Item::Logs);
+    CHECK(bag.Add(Item::Logs, 27) == 27);
+    CHECK(bag.Full() && bag.Count(Item::Logs) == 28);
+    CHECK(bag.Add(Item::Logs) == 0);                // full bag takes nothing
+    const ItemStack taken = bag.TakeSlot(3);
+    CHECK(taken.item == Item::Logs && taken.count == 1);
+    CHECK(bag.FreeSlots() == 1 && bag.Slot(3).item == Item::None);
+    CHECK(bag.TakeSlot(3).item == Item::None);      // empty slot
+    CHECK(bag.TakeSlot(-1).item == Item::None && bag.TakeSlot(99).item == Item::None);
+    CHECK(bag.Add(Item::None) == 0);
+}
+
+static void TestProgressSave() {
+    Skills s;
+    Inventory bag;
+    s.AddXp(Skill::Woodcutting, 275);
+    s.AddXp(Skill::Fishing, 10);
+    bag.Add(Item::Logs, 3);
+    bag.TakeSlot(1);   // leaves a gap: slots 0 and 2
+    const std::string text = SerializeProgress(s, bag);
+    Skills s2;
+    Inventory bag2;
+    ParseProgress(text, &s2, &bag2);
+    CHECK(s2.Xp(Skill::Woodcutting) == 275 && s2.Level(Skill::Woodcutting) == LevelForXp(275));
+    CHECK(s2.Xp(Skill::Fishing) == 10 && s2.Level(Skill::Mining) == 1);
+    CHECK(bag2.Slot(0).item == Item::Logs && bag2.Slot(1).item == Item::None && bag2.Slot(2).item == Item::Logs);
+    // Garbage must not crash or invent items.
+    Skills s3;
+    Inventory bag3;
+    ParseProgress("xp.woodcutting=abc\nslot.99=1:1\nslot.0=77:1\nslot.1=1:-4\nnonsense\nxp.bogus=5\n", &s3, &bag3);
+    CHECK(s3.Level(Skill::Woodcutting) == 1 && bag3.FreeSlots() == Inventory::kSlots);
+}
+
+static void TestForest() {
+    TreeDef a, b;
+    a.x = 5.5f; a.z = 5.5f; a.kind = "round";
+    b.x = 9.5f; b.z = 2.5f; b.kind = "pine";
+    Forest f;
+    f.Init({a, b});
+    CHECK(f.Trees().size() == 2);
+    CHECK(f.IndexAtTile({5, 5}) == 0 && f.IndexAtTile({9, 2}) == 1 && f.IndexAtTile({1, 1}) == -1);
+    CHECK(!f.Trees()[0].stump);
+    CHECK(f.Fell(0));
+    CHECK(f.Trees()[0].stump && !f.Trees()[1].stump);
+    CHECK(!f.Fell(0));                               // already a stump
+    CHECK(!f.Fell(7));                               // no such tree
+    CHECK(f.IndexAtTile({5, 5}) == 0);               // the stump still occupies its tile
+    f.Update(Forest::kRegrowSeconds - 1.0f);
+    CHECK(f.Trees()[0].stump);                       // not yet
+    CHECK(f.SecondsUntilRegrow(0) > 0.5f && f.SecondsUntilRegrow(0) < 1.5f);
+    f.Update(2.0f);
+    CHECK(!f.Trees()[0].stump);                      // grown back after the regrow time
+    CHECK(f.Trees()[0].growAnim < 1.0f);
+    f.Update(Forest::kGrowAnimSeconds + 0.1f);
+    CHECK(f.Trees()[0].growAnim == 1.0f);
+    CHECK(f.Fell(0));                                // can be cut again
+}
+
+static void TestChopping() {
+    CHECK(Forest::kRegrowSeconds >= 120.0f);         // "a few minutes"
+    CHECK(ChopChance(1) < ChopChance(50) && ChopChance(50) < ChopChance(99));
+    CHECK(ChopChance(1) > 0.2f && ChopChance(99) < 0.9f);
+    CHECK(ChopChance(-5) == ChopChance(1) && ChopChance(500) == ChopChance(99));
+
+    ChopSession c;
+    CHECK(!c.Active());
+    CHECK(c.Update(10.0f, 1, [] { return 0.0; }) == ChopEvent::None);   // nothing to chop
+    c.Start(4);
+    CHECK(c.Active() && c.Tree() == 4);
+    CHECK(c.Update(0.3f, 1, [] { return 0.0; }) == ChopEvent::None);    // half a tick: no swing yet
+    CHECK(c.Update(0.4f, 1, [] { return 0.99; }) == ChopEvent::Swing);  // tick passed, unlucky roll
+    CHECK(c.Active());
+    CHECK(c.Update(kChopTickSeconds, 1, [] { return 0.0; }) == ChopEvent::GotLog);   // lucky roll
+    CHECK(!c.Active());                                                  // one log per tree: job done
+
+    // Statistics: higher level gets logs faster.
+    auto avgSwings = [](int level) {
+        unsigned seed = 12345;
+        auto roll = [&seed] {
+            seed = seed * 1664525u + 1013904223u;
+            return (seed >> 8) / 16777216.0;
+        };
+        long swings = 0;
+        for (int i = 0; i < 2000; ++i) {
+            ChopSession s;
+            s.Start(0);
+            while (s.Active()) {
+                if (s.Update(kChopTickSeconds, level, roll) != ChopEvent::None) ++swings;
+            }
+        }
+        return swings / 2000.0;
+    };
+    const double low = avgSwings(1), high = avgSwings(99);
+    CHECK(low > 3.0 && low < 5.0);    // ~1/0.25 = 4 swings
+    CHECK(high < 1.6);                // ~1/0.78 = 1.3 swings
+}
+
+static void TestTreesInMap() {
+    TileMap m;
+    CHECK(m.ParseText("@size 3 2\n@tree 1.50 0.50 round 1.10 45.0\n@tree bogus\n@rows\n...\n.T.\n"));
+    CHECK(m.Trees().size() == 1);                    // the malformed @tree line is skipped
+    CHECK(m.Trees()[0].kind == "round" && m.Trees()[0].Tile() == TileCoord({1, 0}));
+    CHECK(m.Trees()[0].scale > 1.09f && m.Trees()[0].scale < 1.11f && m.Trees()[0].yawDegrees == 45.0f);
+}
+
 // Loads the real generated map and makes sure the important places connect.
 static void TestRealTownMap(const std::string& path) {
     std::ifstream f(path);
@@ -134,6 +285,22 @@ static void TestRealTownMap(const std::string& path) {
             ++g_failed;
         }
     }
+    // Every choppable tree sits on a blocked 'T' tile, none share a tile, and each has a walkable neighbour.
+    CHECK(m.Trees().size() > 50);
+    Forest forest;
+    forest.Init(m.Trees());
+    for (size_t i = 0; i < m.Trees().size(); ++i) {
+        const TileCoord t = m.Trees()[i].Tile();
+        if (m.At(t.x, t.z) != 'T' || forest.IndexAtTile(t) != static_cast<int>(i)) {
+            std::printf("  FAIL tree %zu at %d,%d: tile is '%c' or shared\n", i, t.x, t.z, m.At(t.x, t.z));
+            ++g_failed;
+        }
+        bool open = false;
+        for (int dz = -1; dz <= 1; ++dz)
+            for (int dx = -1; dx <= 1; ++dx)
+                if (m.Walkable(t.x + dx, t.z + dz)) open = true;
+        if (!open) std::printf("  note: tree %zu at %d,%d has no open neighbouring tile\n", i, t.x, t.z);
+    }
     // Walls must actually block: the keep's side wall is not walkable.
     CHECK(!m.Walkable(24, 10));
     // But its door is.
@@ -152,6 +319,13 @@ int main(int argc, char** argv) {
     TestClickInsideSealedRoomFails();
     TestDoorsAreWalkable();
     TestParse();
+    TestXpTable();
+    TestSkills();
+    TestInventory();
+    TestProgressSave();
+    TestForest();
+    TestChopping();
+    TestTreesInMap();
     TestRealTownMap(mapPath);
     if (g_failed == 0) std::printf("All core tests passed.\n");
     else std::printf("%d check(s) failed.\n", g_failed);

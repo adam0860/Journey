@@ -29,7 +29,9 @@ if(NOT raylib_FOUND)
 endif()
 
 # ---- game core: pure C++, no raylib, unit tested ---------------------------------
-add_library(journey_core STATIC src/world/TileMap.cpp src/world/Pathfinder.cpp)
+add_library(journey_core STATIC
+  src/world/TileMap.cpp src/world/Pathfinder.cpp
+  src/game/Skills.cpp src/game/Inventory.cpp src/game/Forest.cpp src/game/Woodcutting.cpp src/game/Progress.cpp)
 target_include_directories(journey_core PUBLIC src)
 if(MSVC)
   target_compile_options(journey_core PRIVATE /W4)

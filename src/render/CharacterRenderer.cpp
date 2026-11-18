@@ -117,38 +117,46 @@ void CharacterRenderer::Draw(const Appearance& a, const CharacterPose& p) {
     const StyleInfo* fs = a.shoes < (int)catalog_.shoes.size() ? &catalog_.shoes[a.shoes] : nullptr;
 
     // forward swing is a negative rotation about +x; legs and arms alternate
-    const float legL = -swing, legR = swing, armL = swing + sway, armR = -swing - sway;
+    float legL = -swing, legR = swing, armL = swing + sway, armR = -swing - sway;
+    float bobY = bob;
+    if (p.chopping) {   // raise both arms overhead, then chop down, once per 0.6 s game tick
+        const float k = 0.5f + 0.5f * std::sin(p.time * 6.2832f / 0.6f);
+        armR = -0.55f - 1.9f * k;
+        armL = armR * 0.85f;
+        legL = legR = 0.0f;
+        bobY = 0.02f * (1.0f - k);
+    }
     const std::string gs(1, g);
 
     // ---- body
-    DrawPart("body_" + gs + "_torso", "torso", 0, bob, p, skin);
-    DrawPart("body_" + gs + "_head", "head", 0, bob, p, skin);
-    DrawPart("body_arm_l", "arm_l", armL, bob, p, skin);
-    DrawPart("body_arm_r", "arm_r", armR, bob, p, skin);
-    DrawPart("body_leg_l", "leg_l", legL, bob, p, skin);
-    DrawPart("body_leg_r", "leg_r", legR, bob, p, skin);
+    DrawPart("body_" + gs + "_torso", "torso", 0, bobY, p, skin);
+    DrawPart("body_" + gs + "_head", "head", 0, bobY, p, skin);
+    DrawPart("body_arm_l", "arm_l", armL, bobY, p, skin);
+    DrawPart("body_arm_r", "arm_r", armR, bobY, p, skin);
+    DrawPart("body_leg_l", "leg_l", legL, bobY, p, skin);
+    DrawPart("body_leg_r", "leg_r", legR, bobY, p, skin);
     // ---- hair
-    if (hs) DrawPart("hair_" + hs->id, "head", 0, bob, p, hair);
+    if (hs) DrawPart("hair_" + hs->id, "head", 0, bobY, p, hair);
     // ---- shirt
     if (ss) {
-        DrawPart("shirt_" + ss->id + "_torso_" + gs, "torso", 0, bob, p, shirt);
+        DrawPart("shirt_" + ss->id + "_torso_" + gs, "torso", 0, bobY, p, shirt);
         if (ss->hasSleeves) {
-            DrawPart("shirt_" + ss->id + "_sleeve_l", "arm_l", armL, bob, p, shirt);
-            DrawPart("shirt_" + ss->id + "_sleeve_r", "arm_r", armR, bob, p, shirt);
+            DrawPart("shirt_" + ss->id + "_sleeve_l", "arm_l", armL, bobY, p, shirt);
+            DrawPart("shirt_" + ss->id + "_sleeve_r", "arm_r", armR, bobY, p, shirt);
         }
     }
     // ---- pants
     if (ps) {
-        DrawPart("pants_" + ps->id + "_hips_" + gs, "torso", 0, bob, p, pants);
+        DrawPart("pants_" + ps->id + "_hips_" + gs, "torso", 0, bobY, p, pants);
         if (ps->hasLegs) {
-            DrawPart("pants_" + ps->id + "_leg_l", "leg_l", legL, bob, p, pants);
-            DrawPart("pants_" + ps->id + "_leg_r", "leg_r", legR, bob, p, pants);
+            DrawPart("pants_" + ps->id + "_leg_l", "leg_l", legL, bobY, p, pants);
+            DrawPart("pants_" + ps->id + "_leg_r", "leg_r", legR, bobY, p, pants);
         }
     }
     // ---- shoes
     if (fs && fs->id != "none") {
-        DrawPart("shoes_" + fs->id + "_l", "leg_l", legL, bob, p, shoes);
-        DrawPart("shoes_" + fs->id + "_r", "leg_r", legR, bob, p, shoes);
+        DrawPart("shoes_" + fs->id + "_l", "leg_l", legL, bobY, p, shoes);
+        DrawPart("shoes_" + fs->id + "_r", "leg_r", legR, bobY, p, shoes);
     }
 }
 

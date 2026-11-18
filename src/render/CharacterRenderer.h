@@ -37,6 +37,7 @@ struct CharacterPose {
     float facing = 0;        // radians, 0 = facing +z
     float phase = 0;         // walk phase
     bool moving = false;
+    bool chopping = false;   // two-handed overhead swing (woodcutting)
     float time = 0;          // for idle breathing
 };
 

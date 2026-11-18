@@ -105,6 +105,7 @@ class Town:
         s.target = None       # override bmesh key (e.g. 'roof_bank')
         s.occupied = set()    # tiles reserved for trees/props placement
         s.bvh = None
+        s.trees = []          # choppable trees: (x, z, kind, scale, rot) - drawn by the game at runtime, not baked
 
     # ---------------------------------------------------------------- bookkeeping
     def mi(s, name):
@@ -468,6 +469,19 @@ class Town:
         rot = r.uniform(0, 6.28)
         if 0 <= int(x) < W and 0 <= int(z) < H:
             s.grid[int(z)][int(x)] = 'T'
+        if lod == 0:
+            # In-town trees are choppable: the game draws them (and their stumps) at runtime from tree_<kind>.glb.
+            # The geometry is still built into a throw-away mesh so the random stream (and so every flower,
+            # bush and tuft placed afterwards) stays exactly as it was when trees were baked in.
+            prev, s.target = s.target, '_discard'
+            s.tree_geom(x, z, kind, sc, rot, lod)
+            s.target = prev
+            s.trees.append((x, z, kind, sc, rot))
+            return
+        s.tree_geom(x, z, kind, sc, rot, lod)    # far forest ring: baked into the skirt
+
+    def tree_geom(s, x, z, kind, sc, rot, lod):
+        r = s.vrng
         if B:
             return s.tree_b(x, z, kind, sc, rot, lod)
         s.cyl(x, z, 0.26 * sc, 0.17 * sc, 0, 1.5 * sc, 6, 'trunk')
@@ -480,6 +494,17 @@ class Town:
             m = r.choice(['leaf_a', 'leaf_b', 'leaf_c'])
             s.blob(x, z, 2.25 * sc, 1.35 * sc, 1.35 * sc, 1.05 * sc, m)
             s.blob(x + r.uniform(-.5, .5) * sc, z + r.uniform(-.5, .5) * sc, 2.9 * sc, 0.85 * sc, 0.85 * sc, 0.7 * sc, r.choice(['leaf_b', 'leaf_a']))
+
+    def stump(s):
+        """Cut-down tree: flared stump with a pale cut face. Built at the origin; the game places it."""
+        r = 0.27 * 1.15
+        if B:
+            s.cyl(0, 0, r * 1.45, r * 1.05, 0, 0.26, 8, 'trunk')
+            s.cyl(0, 0, r * 1.05, r * 0.92, 0.26, 0.40, 8, 'trunk')
+            s.cyl(0, 0, r * 0.90, r * 0.90, 0.40, 0.43, 8, 'wood')
+        else:
+            s.cyl(0, 0, 0.30, 0.22, 0, 0.40, 6, 'trunk')
+            s.cyl(0, 0, 0.21, 0.21, 0.40, 0.43, 6, 'wood')
 
     # ---- style B: fuller trees ----------------------------------------------------------------
     def trunk_b(s, x, z, sc, top, lean=(0.0, 0.0), n=8):
@@ -716,7 +741,7 @@ class Town:
         skip = GROUND_MATS | {'carpet'} | {m for m in PAL if m.startswith('water')}
         verts, tris = [], []
         for key, bm in s.bms.items():
-            if isinstance(key, str) and key.startswith('roof_'):
+            if isinstance(key, str) and (key.startswith('roof_') or key.startswith('tree_') or key in ('stump', '_discard')):
                 continue
             bm.verts.ensure_lookup_table()
             base = len(verts)
@@ -1323,6 +1348,9 @@ def make_objects(T):
             T.apply_uv(bm)
     objs = {}
     for key, bm in T.bms.items():
+        if key == '_discard':
+            bm.free()
+            continue
         name = key if isinstance(key, str) else 'chunk_%d_%d' % key
         me = bpy.data.meshes.new(name)
         bm.to_mesh(me)
@@ -1338,6 +1366,17 @@ def make_objects(T):
 MATS = {}
 
 
+def build_tree_templates(T):
+    """One standalone model per tree kind plus the stump, all at the origin (game scales/rotates/places them)."""
+    for seed, kind in ((11, 'round'), (12, 'pine'), (13, 'tall')):
+        T.vrng = random.Random(seed)
+        T.target = 'tree_' + kind
+        T.tree_geom(0.0, 0.0, kind, 1.0, 0.0, 0)
+    T.target = 'stump'
+    T.stump()
+    T.target = None
+
+
 def srgb_to_lin(a):
     return np.where(a <= 0.04045, a / 12.92, ((a + 0.055) / 1.055) ** 2.4)
 
@@ -1349,7 +1388,10 @@ def lin_to_srgb(a):
 
 def tinted_texture(mat):
     """Procedural texture tinted so its average colour equals the palette colour (contrast preserved)."""
-    from PIL import Image
+    try:
+        from PIL import Image
+    except ImportError:
+        Image = None
     sys.path.insert(0, os.path.dirname(__file__))
     import textures_proc as tp
     name = TEXMAP[mat][0]
@@ -1362,7 +1404,20 @@ def tinted_texture(mat):
     d = os.path.join(ROOT, 'build', 'tex_b')
     os.makedirs(d, exist_ok=True)
     path = os.path.join(d, mat + '.png')
-    Image.fromarray((out * 255 + 0.5).astype(np.uint8)).save(path)
+    px = (out * 255 + 0.5).astype(np.uint8)
+    if Image is not None:
+        Image.fromarray(px).save(path)
+    else:   # Blender's bundled Python has no Pillow: write the PNG with bpy instead (rows run bottom-to-top there)
+        h, w = px.shape[:2]
+        im = bpy.data.images.new('_tinted_tmp', w, h, alpha=False)
+        im.colorspace_settings.name = 'sRGB'
+        rgba = np.ones((h, w, 4), dtype=np.float32)
+        rgba[..., :3] = np.flipud(px[..., :3]).astype(np.float32) / 255.0
+        im.pixels.foreach_set(rgba.ravel())
+        im.filepath_raw = path
+        im.file_format = 'PNG'
+        im.save()
+        bpy.data.images.remove(im)
     return path
 
 
@@ -1430,6 +1485,8 @@ def write_map(T, spawn):
             f.write('@roof %s %d %d %d %d\n' % (name, *[int(v) for v in r]))
         for (x0, z0, x1, z1, name) in AREAS:
             f.write('@area %d %d %d %d %s\n' % (x0, z0, x1, z1, name))
+        for (x, z, kind, sc, rot) in T.trees:
+            f.write('@tree %.2f %.2f %s %.2f %.1f\n' % (x, z, kind, sc, math.degrees(rot)))
         f.write('@rows\n')
         for row in T.grid:
             f.write(''.join(row) + '\n')
@@ -1439,6 +1496,7 @@ if __name__ == '__main__':
     bpy.ops.wm.read_factory_settings(use_empty=True)
     make_materials(PAL.keys())
     T = build()
+    build_tree_templates(T)
     objs = make_objects(T)
     export_all(objs)
     write_map(T, (32, 30))

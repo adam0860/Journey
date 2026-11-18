@@ -25,6 +25,7 @@ bool TileMap::ParseText(const std::string& text, std::string* err) {
     tiles_.clear();
     roofs_.clear();
     areas_.clear();
+    trees_.clear();
     spawn_ = {};
 
     std::istringstream in(text);
@@ -58,6 +59,10 @@ bool TileMap::ParseText(const std::string& text, std::string* err) {
             std::getline(ls, a.name);
             a.name = Trim(a.name);
             if (!ls.fail() || !a.name.empty()) areas_.push_back(a);
+        } else if (key == "@tree") {
+            TreeDef t;
+            ls >> t.x >> t.z >> t.kind >> t.scale >> t.yawDegrees;
+            if (!ls.fail()) trees_.push_back(t);
         } else if (key == "@rows") {
             rows = true;
         }

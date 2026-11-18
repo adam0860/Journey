@@ -15,6 +15,7 @@ public:
     void Teleport(TileCoord t);
     void SetPath(const std::vector<TileCoord>& tiles);
     void Stop() { path_.clear(); }
+    void FaceToward(float wx, float wz);   // turn on the spot to look at a world position
     void Update(float dt);
 
     bool Moving() const { return !path_.empty(); }

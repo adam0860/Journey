@@ -5,7 +5,8 @@ C++17 + [raylib](https://www.raylib.com), art built procedurally in Blender.
 Design doc: *Journey - Game Design Document* (kept in Claude Docs).
 
 **Status: prototype.** You can walk around Castle Town (castle, throne hall, bank, inn, market square,
-houses, river) by clicking. No skills, combat, items or NPCs yet - see the milestone list in the GDD.
+houses, river) by clicking, and chop trees for logs (Woodcutting XP, bag, skills tab; stumps regrow after 3 minutes).
+No combat or NPCs yet - see the milestone list in the GDD.
 
 ## Run it
 
@@ -17,6 +18,8 @@ Windows: unzip `journey-windows.zip` and run `journey.exe` (keep the `assets` fo
 | Drag | rotate camera |
 | Mouse wheel / pinch | zoom |
 | Arrow keys or Q / E | rotate; Up/Down or +/- zoom |
+| Tap a tree | walk up and chop it (logs go in the Bag tab, XP in the Skills tab) |
+| Bag / Skills tabs | tap to open or close; tap a bag item to drop it |
 | F3 | debug: collision grid + path |
 
 Walk into the bank, inn or throne hall and their roofs disappear, like the original.

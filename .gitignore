@@ -11,3 +11,5 @@ android/app/build/
 android/app/.cxx/
 android/build/
 .idea/
+__pycache__/
+*.pyc

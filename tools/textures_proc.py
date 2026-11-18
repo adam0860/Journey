@@ -7,7 +7,10 @@ into assets/textures/ and a contact sheet to build/tex_sheet.png.
 """
 import os, sys
 import numpy as np
-from PIL import Image
+try:
+    from PIL import Image
+except ImportError:      # Blender's bundled Python has no Pillow; only the PNG/preview helpers below need it
+    Image = None
 
 N = 256
 

@@ -10,6 +10,11 @@ void Player::Teleport(TileCoord t) {
     path_.clear();
 }
 
+void Player::FaceToward(float wx, float wz) {
+    const float dx = wx - x_, dz = wz - z_;
+    if (dx * dx + dz * dz > 1e-6f) facing_ = std::atan2(dx, dz);
+}
+
 void Player::SetPath(const std::vector<TileCoord>& tiles) {
     path_.assign(tiles.begin(), tiles.end());
 }
