@@ -30,6 +30,7 @@
 //   --wear ID [ID...]             put items on (no level check);  --block T  pose a blocked strike T seconds after it began (--blockhit: it lands)
 //   --make 0|1 [TIER]             open the furnace (0) or anvil (1, with metal TIER 0-3) make panel on frame 6
 //   --rock I / --station I        pretend a tap on rock I / station I on frame 5     --tab 2  the Gear tab
+//   --bank                        open the bank window on frame 6 (with a few things in the bank);  --arrows N  put N bronze arrows in the quiver;  --spell N  choose spell N (0..7)
 //   --coins N                     give N coins;  --shop I  open shop I (0 general_town, 1 smith_town, 2.. village) on frame 6;  --talk I  walk up to person I (1-based) on frame 5
 //   --dosmelt TIER / --dosmith TIER TYPE   start smelting / smithing on frame 6 (stand next to the furnace / anvil first; TYPE 0-8 = dagger..pickaxe)
 //   (with --shot nothing is saved, so test flags never touch your real progress)
@@ -40,10 +41,14 @@
 #include <cstring>
 #include <functional>
 #include <random>
+#include <set>
 #include <string>
 #include <vector>
 
 #include "game/Appearance.h"
+#include "game/Archery.h"
+#include "game/Bank.h"
+#include "game/Magic.h"
 #include "game/Equipment.h"
 #include "game/Gear.h"
 #include "game/Mining.h"
@@ -52,6 +57,7 @@
 #include "game/Smithing.h"
 #include "game/Fires.h"
 #include "game/Forest.h"
+#include "game/Adventurers.h"
 #include "game/Gameplay.h"
 #include "game/GroundItems.h"
 #include "game/Npc.h"
@@ -60,11 +66,14 @@
 #include "game/Progress.h"
 #include "game/Skills.h"
 #include "game/Woodcutting.h"
+#include "game/Settings.h"
+#include "platform/Audio.h"
 #include "platform/PointerInput.h"
 #include "raylib.h"
 #include "render/CameraRig.h"
 #include "render/AnimalRenderer.h"
 #include "render/CharacterRenderer.h"
+#include "render/Effects.h"
 #include "render/LitShader.h"
 #include "render/PropRenderer.h"
 #include "render/TownRenderer.h"
@@ -98,18 +107,24 @@ struct Args {
     bool osk = false;
     std::vector<Vector2> uiClicks;
     int tab = -1;
+    int spellPage = 0;       // dev: --spellpage N (turn the spellbook page)
+    bool helpPage = false;   // dev: --helppage (with --tab 7)
+    float skull = 0.0f;      // dev: --skull SECONDS (start skulled)
+    int scroll = 0;          // dev: --scroll N (scroll the open page down N pixels, for the quest log and the how-to-play page)
     bool hasSeed = false;
     unsigned seed = 0;
     int xp = 0, logs = 0, fell = 0;
     int raw = 0;
     std::vector<std::pair<std::string, int>> skillXp;
     int tapTree = -1, tapSpot = -1;
-    bool light = false, cook = false;
+    bool light = false, cook = false, bonfire = false;
     std::vector<TileCoord> fires;
     int anim = 0;            // dev: force an animation (1 chop, 2 fish, 3 light, 4 cook)
     float atime = -1.0f;     // dev: freeze the animation clock at this time
     int sel = -1;            // dev: select this bag slot
     int attack = 0, hp = -1, cstyle = -1, menuNpc = 0, tapNpc = 0;
+    float advFast = 0.0f;    // dev: let the other adventurers play this many seconds before the first frame
+    int advNear = -1;        // dev: stand next to adventurer number N (0 = the first real one)
     bool hasTapXY = false;
     float tapX = 0, tapY = 0;
     bool hasMenu = false, hasHover = false;
@@ -125,6 +140,10 @@ struct Args {
     int make = -1, makeTier = 0;   // dev: --make 0|1 [TIER]
     int tapRock = -1, tapStation = -1;
     int coins = 0, shop = -1, talk = 0;
+    bool bank = false;
+    int arrows = 0, spell = -1;
+    int quest = -1;                 // --quest N: start quest N
+    int zooFrom = -1, zooTo = -1;   // --zsp A B: only species A..B in the zoo
     int doSmelt = -1;                 // dev: --dosmelt TIER   start smelting on frame 6 (stand next to the furnace)
     int doSmithTier = -1, doSmithType = 0;   // dev: --dosmith TIER TYPE   start smithing on frame 6 (stand next to the anvil)
 };
@@ -152,9 +171,15 @@ Args ParseArgs(int argc, char** argv) {
         else if (is("--cyaw") && more(1)) a.cyaw = (float)std::atof(argv[++i]);
         else if (is("--look") && more(9)) { a.hasLook = true; for (int k = 0; k < 9; ++k) a.look[k] = std::atoi(argv[i + 1 + k]); i += 9; }
         else if (is("--tab") && more(1)) a.tab = std::atoi(argv[++i]);
+        else if (is("--spellpage") && more(1)) a.spellPage = std::atoi(argv[++i]);
+        else if (is("--scroll") && more(1)) a.scroll = std::atoi(argv[++i]);
+        else if (is("--skull") && more(1)) a.skull = static_cast<float>(std::atof(argv[++i]));
+        else if (is("--helppage")) a.helpPage = true;
         else if (is("--seed") && more(1)) { a.hasSeed = true; a.seed = (unsigned)std::atoi(argv[++i]); }
         else if (is("--xp") && more(1)) a.xp = std::atoi(argv[++i]);
         else if (is("--logs") && more(1)) a.logs = std::atoi(argv[++i]);
+        else if (is("--advfast") && more(1)) a.advFast = static_cast<float>(std::atof(argv[++i]));
+        else if (is("--advnear") && more(1)) a.advNear = std::atoi(argv[++i]);
         else if (is("--fell") && more(1)) a.fell = std::atoi(argv[++i]);
         else if (is("--raw") && more(1)) a.raw = std::atoi(argv[++i]);
         else if (is("--skill") && more(2)) { a.skillXp.push_back({argv[i + 1], std::atoi(argv[i + 2])}); i += 2; }
@@ -176,6 +201,7 @@ Args ParseArgs(int argc, char** argv) {
         else if (is("--face") && more(1)) a.face = (float)std::atof(argv[++i]);
         else if (is("--atime") && more(1)) a.atime = (float)std::atof(argv[++i]);
         else if (is("--light")) a.light = true;
+        else if (is("--bonfire")) a.bonfire = true;
         else if (is("--cook")) a.cook = true;
         else if (is("--fire") && more(2)) { a.fires.push_back({std::atoi(argv[i + 1]), std::atoi(argv[i + 2])}); i += 2; }
         else if (is("--debug")) a.debug = true;
@@ -188,6 +214,11 @@ Args ParseArgs(int argc, char** argv) {
         }
         else if (is("--rock") && more(1)) a.tapRock = std::atoi(argv[++i]);
         else if (is("--coins") && more(1)) a.coins = std::atoi(argv[++i]);
+        else if (is("--bank")) a.bank = true;
+        else if (is("--quest") && more(1)) a.quest = std::atoi(argv[++i]);
+        else if (is("--zsp") && more(2)) { a.zooFrom = std::atoi(argv[i + 1]); a.zooTo = std::atoi(argv[i + 2]); i += 2; }
+        else if (is("--arrows") && more(1)) a.arrows = std::atoi(argv[++i]);
+        else if (is("--spell") && more(1)) a.spell = std::atoi(argv[++i]);
         else if (is("--shop") && more(1)) a.shop = std::atoi(argv[++i]);
         else if (is("--talk") && more(1)) a.talk = std::atoi(argv[++i]);
         else if (is("--dosmelt") && more(1)) a.doSmelt = std::atoi(argv[++i]);
@@ -268,8 +299,8 @@ void CollectSpots(const std::vector<SpotDef>& spots, const Ray& ray, std::vector
 void CollectNpcs(const Npcs& npcs, const Ray& ray, std::vector<RayHit>* out) {
     for (const Npc& n : npcs.All()) {
         if (!n.Alive()) continue;
-        const float half = n.species == Species::Chicken ? 0.38f : (n.species == Species::Calf ? 0.55f : (n.species == Species::Cow ? 0.8f : 0.45f));
         const float height = AnimalRenderer::Height(n.species);
+        const float half = std::clamp(0.38f * height, 0.38f, 1.7f);
         const BoundingBox box = {{n.x - half, 0.0f, n.z - half}, {n.x + half, height, n.z + half}};
         const RayCollision hit = GetRayCollisionBox(ray, box);
         if (hit.hit) out->push_back({hit.distance, {TargetKind::Npc, n.id}});
@@ -305,6 +336,22 @@ void CollectPeople(const People& people, const Ray& ray, std::vector<RayHit>* ou
     }
 }
 
+// The nearest adventurer the ray touches (their id), or -1.
+int AdventurerHit(const Adventurers& advs, const Ray& ray) {
+    int best = -1;
+    float bd = 1e9f;
+    for (const Adventurer& a : advs.All()) {
+        if (a.pvp.dead) continue;
+        const BoundingBox box = {{a.x - 0.45f, 0.0f, a.z - 0.45f}, {a.x + 0.45f, 1.9f, a.z + 0.45f}};
+        const RayCollision hit = GetRayCollisionBox(ray, box);
+        if (hit.hit && hit.distance < bd) {
+            bd = hit.distance;
+            best = a.id;
+        }
+    }
+    return best;
+}
+
 void CollectPiles(const GroundItems& ground, const Ray& ray, std::vector<RayHit>* out) {
     for (const Pile& p : ground.All()) {
         const float cx = p.tile.x + 0.5f, cz = p.tile.z + 0.5f;
@@ -327,26 +374,44 @@ public:
         else if (tone == Tone::Warn) c = {255, 120, 110, 255};
         else if (tone == Tone::Good) c = {255, 235, 120, 255};
         hud_.Say(text, c);
+        if (audio_ && text.rfind("You eat the", 0) == 0) audio_->Play(Sfx::Eat);
     }
-    void XpDrop(Skill skill, int amount) override { hud_.XpDrop(skill, amount); }
+    void XpDrop(Skill skill, int amount) override {
+        hud_.XpDrop(skill, amount);
+        if (audio_) audio_->Play(Sfx::Ding, 0.45f);
+    }
     void LevelUp(Skill skill, int level) override {
         hud_.Say(TextFormat("Congratulations, you just advanced a %s level. You are now level %d.", SkillName(skill), level),
                  {255, 235, 120, 255});
         hud_.ShowArea(TextFormat("%s level %d", SkillName(skill), level));
+        if (audio_) audio_->Play(Sfx::LevelUp);
     }
     void Hit(bool onPlayer, int npcId, int damage) override {
         hud_.AddHitsplat(where_(onPlayer, npcId), damage);
+        if (audio_) audio_->Play(damage > 0 ? Sfx::Hit : Sfx::Miss, onPlayer ? 0.6f : 0.8f, onPlayer ? 0.85f : 1.0f);
         if (onPlayer && heroBar_) *heroBar_ = 6.0f;   // show the hero's health bar for a few seconds after he is struck at
     }
     void PlayerDied() override {
         hud_.ShowArea("Oh dear, you are dead!");
+        if (audio_) audio_->Play(Sfx::Death);
         died_();
     }
     void Changed() override { save_(); }
     void OpenMake(const MakeMenu& menu) override { hud_.OpenMake(menu); }
     void OpenShop(const ShopMenu& menu) override { hud_.OpenShop(menu); }
+    void OpenBank() override { hud_.OpenBank(); }
+    void Shoot(const ShotFx& fx) override {
+        if (audio_) audio_->Play(fx.magic ? Sfx::Cast : Sfx::Shoot, fx.toHero ? 0.5f : 0.8f);
+        if (!effects_) return;
+        if (fx.toHero) effects_->AddShot(fx, where_(false, fx.npcId).y, 1.2f);   // a monster shooting at the hero
+        else effects_->AddShot(fx, 1.2f, where_(false, fx.npcId).y);
+    }
+    void SetEffects(Effects* e) { effects_ = e; }
+    void SetAudio(AudioSystem* a) { audio_ = a; }
 
 private:
+    Effects* effects_ = nullptr;
+    AudioSystem* audio_ = nullptr;
     Hud& hud_;
     std::function<void()> save_;
     std::function<Vector3(bool, int)> where_;
@@ -365,32 +430,62 @@ Anim AnimFor(Activity a) {
         case Activity::Mining: return Anim::Mine;
         case Activity::Smelting: return Anim::Smelt;
         case Activity::Smithing: return Anim::Smith;
+        case Activity::Crafting: return Anim::Craft;
         default: return Anim::None;
     }
 }
 
 // The model files for a set of worn items.
-GearLook GearLookOf(Item weapon, Item shield, Item helm, Item body, Item legs, Item pick) {
+GearLook GearLookOf(Item weapon, Item shield, Item helm, Item body, Item legs, Item pick, Item feet = Item::None, Item hands = Item::None,
+                    Item cape = Item::None) {
     GearLook look;
     auto name = [](Item item, const char* prefix) {
         Tier t;
         GearType g;
+        if (const RobeInfo* robe = FindRobe(item)) return std::string(robe->model);
+        if (const LeatherInfo* leather = FindLeather(item)) return std::string(leather->model);
         if (!GearOf(item, &t, &g)) return std::string();
         return std::string(prefix) + TierKey(t) + "_" + GearTypeKey(g);
     };
     look.weapon = name(weapon, "held_");
+    if (const BowInfo* bow = FindBow(weapon)) {           // a bow goes in the left hand, a staff in the right
+        look.weapon.clear();
+        look.bow = std::string("held_") + bow->model;
+    } else if (const StaffInfo* staff = FindStaff(weapon)) {
+        look.weapon = std::string("held_") + staff->model;
+    }
     look.shield = name(shield, "held_");
     look.helm = name(helm, "gear_");
     look.body = name(body, "gear_");
     look.legs = name(legs, "gear_");
     look.pick = name(pick, "held_");
+    look.boots = name(feet, "gear_");
+    look.gloves = name(hands, "gear_");
+    if (const CapeInfo* c = FindCape(cape)) look.cape = std::string("gear_cape_") + c->key;
     return look;
 }
 
 // What he wears and wields right now.
 GearLook LookOf(const Equipment& eq, const Inventory& bag, const Skills& skills) {
-    return GearLookOf(eq.Get(EquipSlot::Weapon), eq.Get(EquipSlot::Shield), eq.Get(EquipSlot::Head), eq.Get(EquipSlot::Body),
-                      eq.Get(EquipSlot::Legs), BestPickaxe(bag, skills.Level(Skill::Mining)));
+    GearLook look = GearLookOf(eq.Get(EquipSlot::Weapon), eq.Get(EquipSlot::Shield), eq.Get(EquipSlot::Head), eq.Get(EquipSlot::Body),
+                               eq.Get(EquipSlot::Legs), BestPickaxe(bag, skills.Level(Skill::Mining)), eq.Get(EquipSlot::Feet), eq.Get(EquipSlot::Hands),
+                               eq.Get(EquipSlot::Cape));
+    switch (eq.Get(EquipSlot::Amulet)) {   // the pendant is drawn on his chest (rings are too small to see)
+        case Item::GoldAmulet: look.amulet = "gear_amulet_gold"; break;
+        case Item::SapphireAmulet: look.amulet = "gear_amulet_sapphire"; break;
+        case Item::EmeraldAmulet: look.amulet = "gear_amulet_emerald"; break;
+        case Item::RubyAmulet: look.amulet = "gear_amulet_ruby"; break;
+        case Item::DiamondAmulet: look.amulet = "gear_amulet_diamond"; break;
+        case Item::DragonstoneAmulet: look.amulet = "gear_amulet_dragonstone"; break;
+        case Item::MummysAmulet: look.amulet = "gear_amulet_mummy"; break;
+        case Item::TrollToothAmulet: look.amulet = "gear_amulet_troll"; break;
+        case Item::AbyssalAmulet: look.amulet = "gear_amulet_diamond"; break;
+        case Item::OpalAmulet: look.amulet = "gear_amulet_opal"; break;
+        case Item::JadeAmulet: look.amulet = "gear_amulet_jade"; break;
+        case Item::RedTopazAmulet: look.amulet = "gear_amulet_topaz"; break;
+        default: break;
+    }
+    return look;
 }
 
 bool SkillFromKey(const std::string& key, Skill* out) {
@@ -414,6 +509,21 @@ int main(int argc, char** argv) {
 #endif
     SetExitKey(KEY_NULL);
     if (!args.shot) SetTargetFPS(120);
+
+    // ---- sound: music and effects are made in code (game/Synth); the volumes live in their own small file ----
+    AudioSystem audio;
+    Settings settings;
+    const char* kSettingsFile = "journey_settings.cfg";
+    {
+        char* t = LoadFileText(kSettingsFile);
+        if (t) {
+            settings = ParseSettings(t);
+            UnloadFileText(t);
+        }
+    }
+    if (!args.shot) audio.Init();   // (screenshot runs stay silent)
+    audio.SetMusicVolume(settings.music);
+    audio.SetSfxVolume(settings.sfx);
 
     // ---- load content ----
     TileMap map;
@@ -513,19 +623,33 @@ int main(int argc, char** argv) {
     Skills skills;
     Inventory bag;
     Equipment equip;
+    Bank bank;
+    QuestLog savedQuests;   // read from the save now, handed to the game once it exists
+    QuestLog* questsLive = nullptr;
+    Adventurers* advsLive = nullptr;
+    const char* kAdventurersFile = "journey_adventurers.cfg";
+    int savedPkKills = 0, savedPkDeaths = 0;   // his record against other players
+    std::function<int()> pkKillsNow, pkDeathsNow;
+    float savedSkull = 0.0f;                   // the skull he wore when he left (seconds)
+    std::function<float()> skullNow;           // ...and, once the game exists, the skull he wears now
+    std::set<std::string> savedVisited;   // places he has been to (read now, handed to the game; saved from the game afterwards)
+    const std::set<std::string>* visitedLive = nullptr;
+    int spellSel = 0;
     CombatStyle combatStyle = CombatStyle::Accurate;
+    bool firstRun = true;
     {
         SetTraceLogLevel(LOG_ERROR);   // a missing file is normal on first run
         char* t = LoadFileText(kProgressFile);
         SetTraceLogLevel(LOG_INFO);
         if (t) {
-            ParseProgress(t, &skills, &bag, &combatStyle, &equip);
+            firstRun = false;
+            ParseProgress(t, &skills, &bag, &combatStyle, &equip, &bank, &spellSel, &savedQuests, &savedVisited, &savedSkull, &savedPkKills, &savedPkDeaths);
             UnloadFileText(t);
         }
     }
-    // The starting tools (bronze axe, small fishing net, tinderbox). Tools can't be dropped, so this only adds
-    // them on a first run, or to a save from before tools existed.
-    const bool gotKit = GiveStarterKit(&bag) > 0;
+    // The starting tools (axe, net, tinderbox, pickaxe, hammer) are given on the very first run only. They can be dropped
+    // or sold like anything else, so they must not come back every time the game starts.
+    const bool gotKit = firstRun && GiveStarterKit(&bag) > 0;
     if (args.xp > 0) skills.AddXp(Skill::Woodcutting, args.xp);   // dev flags
     for (const auto& sx : args.skillXp) {
         Skill sk;
@@ -539,16 +663,40 @@ int main(int argc, char** argv) {
         if (it.first > 0 && it.first < static_cast<int>(Item::Count)) bag.Add(static_cast<Item>(it.first), it.second);
     for (int id : args.wear) {   // dev: put it on, whatever the levels
         EquipSlot es;
-        if (id > 0 && id < static_cast<int>(Item::Count) && Equippable(static_cast<Item>(id), &es)) equip.Set(es, static_cast<Item>(id));
+        if (id > 0 && id < static_cast<int>(Item::Count) && Equippable(static_cast<Item>(id), &es)) {
+            if (es == EquipSlot::Ammo) equip.SetAmmo(static_cast<Item>(id), 60);
+            else equip.Set(es, static_cast<Item>(id));
+        }
     }
     auto saveProgress = [&]() {
         if (args.shot) return;   // screenshot/test runs never touch the real save
-        const std::string text = SerializeProgress(skills, bag, combatStyle, &equip);
+        const std::string text = SerializeProgress(skills, bag, combatStyle, &equip, &bank, spellSel, questsLive ? questsLive : &savedQuests, visitedLive ? visitedLive : &savedVisited,
+                                                  skullNow ? skullNow() : savedSkull, pkKillsNow ? pkKillsNow() : savedPkKills, pkDeathsNow ? pkDeathsNow() : savedPkDeaths);
         SaveFileText(kProgressFile, (char*)text.c_str());
+        if (advsLive) {   // the other adventurers are saved with him
+            const std::string adv = advsLive->Save();
+            SaveFileText(kAdventurersFile, (char*)adv.c_str());
+        }
     };
     if (gotKit) saveProgress();
-    hud.Bind(&skills, &bag, &equip);
+    if (args.arrows > 0) equip.SetAmmo(Item::BronzeArrows, args.arrows);
+    if (args.spell >= 0) spellSel = std::clamp(args.spell, 0, SpellCount() - 1);
+    if (args.bank) {   // dev: something in the bank to look at
+        bank.Deposit(Item::Coins, 12500);
+        bank.Deposit(Item::Logs, 80);
+        bank.Deposit(Item::IronOre, 30);
+        bank.Deposit(Item::BronzeBar, 12);
+        bank.Deposit(Item::BronzeArrows, 400);
+        bank.Deposit(Item::FireRune, 150);
+        bank.Deposit(Item::Shortbow, 1);
+        bank.Deposit(Item::FireStaff, 1);
+        bank.Deposit(Item::Bread, 7);
+    }
+    hud.Bind(&skills, &bag, &equip, &bank);
+    hud.SetVolumes(settings.music, settings.sfx);
     if (args.tab >= 0) hud.ToggleTab(args.tab);
+    if (args.spellPage > 0) hud.StepSpellPage(args.spellPage);
+    if (args.helpPage) hud.SetHelpPage(true);
     if (args.sel >= 0) hud.SelectSlot(args.sel);
 
     Forest forest;
@@ -567,6 +715,7 @@ int main(int argc, char** argv) {
     shops.Init();
     People people;
     people.Init(map);
+    hud.SetMap(&map, &people);
     if (args.coins > 0) bag.Add(Item::Coins, args.coins);
     for (const auto& pa : args.piles)
         if (pa.item > 0 && pa.item < static_cast<int>(Item::Count)) ground.Drop({pa.x, pa.z}, {static_cast<Item>(pa.item), 1});
@@ -575,13 +724,70 @@ int main(int argc, char** argv) {
         hud, saveProgress,
         [&](bool onPlayer, int npcId) {
             if (onPlayer) return Vector3{player.X(), 1.25f, player.Z()};
+            if (IsFoeId(npcId)) {   // another player
+                const Adventurer* ad = advsLive ? advsLive->Find(npcId - kFoeIdBase) : nullptr;
+                return ad ? Vector3{ad->x, 1.25f, ad->z} : Vector3{0, 0, 0};
+            }
             const Npc* n = npcs.Find(npcId);
             return n ? Vector3{n->x, AnimalRenderer::Height(n->species) * 0.62f, n->z} : Vector3{0, 0, 0};
         },
         [&]() { camera.SnapTo(player.X(), player.Z()); }, &heroBar);
-    Gameplay game(map, player, skills, bag, equip, forest, rocks, fires, npcs, ground, shops, people, events, roll);
+    Effects effects;
+    events.SetEffects(&effects);
+    events.SetAudio(&audio);
+    float actSound = 0.0f;                  // the rhythm of the chopping / mining / fishing sounds
+    Activity lastActivity = Activity::None;
+    Gameplay game(map, player, skills, bag, equip, forest, rocks, fires, npcs, ground, shops, people, bank, events, roll);
     game.SetStyle(combatStyle);
+    game.SetSpell(spellSel);
+    hud.SetSpell(spellSel);
+    game.Quests() = savedQuests;
+    questsLive = &game.Quests();
+    game.SetVisited(savedVisited);
+    game.SetSkull(savedSkull);
+    skullNow = [&]() { return game.SkullLeft(); };
+    game.SetPvpRecord(savedPkKills, savedPkDeaths);
+    pkKillsNow = [&]() { return game.PvpKills(); };
+    pkDeathsNow = [&]() { return game.PvpDeaths(); };
+    visitedLive = &game.Visited();
+    hud.Bind(&skills, &bag, &equip, &bank, questsLive);
+    if (args.quest >= 0 && args.quest < game.Quests().Count()) game.Quests().Start(args.quest);   // dev
     hud.SetCombatStyle(combatStyle);
+    // ---- the other adventurers: they start the game when he does, and play it by the same rules (game/Adventurers.h)
+    Adventurers advs;
+    AdvWorld advWorld;
+    advWorld.map = &map;
+    advWorld.forest = &forest;
+    advWorld.rocks = &rocks;
+    advWorld.fires = &fires;
+    advWorld.npcs = &npcs;
+    advWorld.people = &people;
+    advWorld.roll = roll;
+    advWorld.hero = player.Tile();
+    {
+        char* t = args.shot ? nullptr : LoadFileText(kAdventurersFile);
+        if (t && advs.Load(advWorld, t)) {
+            // (saved ones carry on)
+        } else {
+            advs.Init(advWorld);
+        }
+        if (t) UnloadFileText(t);
+    }
+    advsLive = &advs;
+    game.SetFoes(&advs);
+    if (args.skull > 0.0f) game.SetSkull(args.skull);   // dev
+    advWorld.ground = &ground;
+    advWorld.hitHero = [&](int foeId, int damage) { game.StrikeHero(foeId, damage); };
+    if (args.advFast > 0.0f) advs.FastForward(args.advFast, advWorld);
+    if (args.advNear >= 0) {   // dev: look at somebody
+        int k = 0;
+        for (const Adventurer& ad : advs.All())
+            if (k++ == args.advNear) {
+                player.Teleport(ad.Tile());
+                camera.SnapTo(player.X(), player.Z());
+            }
+    }
+    float advSaveLeft = 45.0f, rankLeft = 0.0f;
     PropRenderer props;
     props.Load(lit);
     AnimalRenderer animals;
@@ -642,6 +848,20 @@ int main(int argc, char** argv) {
     };
     // A plain tap on the world: do the default (first) option of what is under it - Attack, Chop down, Take, Walk here...
     auto worldTap = [&](Vector2 pos) {
+        {   // another adventurer: look at them, and they say something back
+            const int who = AdventurerHit(advs, GetScreenToWorldRay(pos, camera.Get()));
+            if (who >= 0 && IsDangerousArea(map.AreaAt(player.Tile().x, player.Tile().z))) {   // in the Abyss: a tap on a player is an attack
+                game.TapFoe(kFoeIdBase + who);
+                return;
+            }
+            if (who >= 0) {
+                hud.Say(advs.ExamineText(who), {255, 224, 120, 255});
+                const Adventurer* ad = advs.Find(who);
+                const std::string reply = advs.TalkLine(who, roll);
+                if (ad && !reply.empty()) hud.Say(ad->name + ": " + reply, {150, 235, 255, 255});
+                return;
+            }
+        }
         bool hasGround = false;
         float gx = 0, gz = 0;
         const std::vector<Target> under = gatherHits(pos, &hasGround, &gx, &gz);   // (separate statement: argument order is unspecified)
@@ -650,7 +870,7 @@ int main(int argc, char** argv) {
     };
     // Open the context menu for a screen point (long press / right click / --menu).
     auto openContextMenu = [&](Vector2 pos) {
-        if (hud.MakeOpen() || hud.ShopOpen()) return;
+        if (hud.MakeOpen() || hud.ShopOpen() || hud.BankOpen() || hud.DialogueOpen()) return;
         const int worn = hud.EquipSlotAt(pos);
         if (worn >= 0) {
             std::vector<MenuEntry> e = game.BuildEquipMenu(static_cast<EquipSlot>(worn));
@@ -664,6 +884,32 @@ int main(int argc, char** argv) {
             return;
         }
         if (hud.Hits(pos)) return;   // a panel with nothing to offer
+        {   // another adventurer: their name and combat level, coloured against the hero's like a creature's
+            const int who = AdventurerHit(advs, GetScreenToWorldRay(pos, camera.Get()));
+            const Adventurer* ad = who >= 0 ? advs.Find(who) : nullptr;
+            if (ad) {
+                const Rgb c = LevelColor(skills.CombatLevel(), ad->Combat());
+                const std::string level = " (level-" + std::to_string(ad->Combat()) + ")";
+                std::vector<MenuEntry> e;
+                std::vector<const char*> verbs;
+                if (IsDangerousArea(map.AreaAt(player.Tile().x, player.Tile().z))) verbs.push_back("Attack ");   // (the Abyss only)
+                verbs.push_back("Talk-to ");
+                verbs.push_back("Examine ");
+                for (const char* verb : verbs) {
+                    MenuEntry m;
+                    m.label = {{verb, kMenuWhite}, {ad->name, kMenuNpc}, {level, c}};
+                    m.act = std::string(verb) == "Examine " ? MenuAct::ExamineTarget : (std::string(verb) == "Attack " ? MenuAct::Attack : MenuAct::TalkTo);
+                    m.target = {TargetKind::Adventurer, who};
+                    e.push_back(m);
+                }
+                MenuEntry cancel;
+                cancel.label = {{"Cancel", kMenuWhite}};
+                cancel.act = MenuAct::Cancel;
+                e.push_back(cancel);
+                hud.OpenMenu(pos, std::move(e));
+                return;
+            }
+        }
         bool hasGround = false;
         float gx = 0, gz = 0;
         const std::vector<Target> hits = gatherHits(pos, &hasGround, &gx, &gz);
@@ -696,11 +942,18 @@ int main(int argc, char** argv) {
 
         // ---- input ----
         const PointerFrame in = pointer.Poll();
-        float rot = in.rotateDegrees;
+        // a drag that starts on a panel scrolls it (the quest log, the how-to-play page) and never turns the camera
+        const bool dragOnHud = in.dragging && hud.Hits(in.dragStart);
+        if (dragOnHud && hud.ScrollableAt(in.dragStart)) hud.ScrollBy(-in.dragDelta.y);
+        float rot = dragOnHud ? 0.0f : in.rotateDegrees;
         if (IsKeyDown(KEY_LEFT) || IsKeyDown(KEY_Q)) rot -= 110.0f * dt;
         if (IsKeyDown(KEY_RIGHT) || IsKeyDown(KEY_E)) rot += 110.0f * dt;
         camera.RotateDegrees(rot);
         float zoom = in.zoomDelta;
+        if (in.wheel != 0.0f && hud.ScrollableAt(in.hoverPos)) {   // the wheel over a scrollable page scrolls it instead of zooming
+            zoom += in.wheel * kWheelZoomUnits;
+            hud.ScrollBy(-in.wheel * 48.0f);
+        }
         if (IsKeyDown(KEY_EQUAL) || IsKeyDown(KEY_UP)) zoom -= 14.0f * dt;
         if (IsKeyDown(KEY_MINUS) || IsKeyDown(KEY_DOWN)) zoom += 14.0f * dt;
         camera.ZoomBy(zoom);
@@ -708,12 +961,21 @@ int main(int argc, char** argv) {
         if (IsKeyPressed(KEY_F4) && ensureLoaded(1 - style)) style = 1 - style;
         if (IsKeyPressed(KEY_F5)) shadows = !shadows;
         if (IsKeyPressed(KEY_F6)) { game.Cancel(); player.Stop(); openCreator(); continue; }
+        if (IsKeyPressed(KEY_ESCAPE)) {   // Esc closes the top-most panel (the design document's keyboard control), one at a time
+            if (hud.MenuOpen()) hud.CloseMenu();
+            else if (hud.MakeOpen()) hud.CloseMake();
+            else if (hud.ShopOpen()) hud.CloseShop();
+            else if (hud.BankOpen()) hud.CloseBank();
+            else if (hud.DialogueOpen()) game.DialogueClose();
+            else if (hud.OpenTab() >= 0) hud.CloseTabs();
+        }
 
         // Long press / right click: the full menu for what is under the finger.
         if (in.context) {
             hud.CloseMenu();
             openContextMenu(in.contextPos);
         }
+        if (args.scroll != 0 && frame == 6) hud.ScrollBy(static_cast<float>(args.scroll));   // dev (the page's limit is known after one draw)
         if (args.hasMenu && frame == 8) openContextMenu({args.menuX, args.menuY});
         if (args.menuNpc > 0 && frame == 8) {   // dev: long-press right on animal N
             if (const Npc* n = npcs.Find(args.menuNpc)) openContextMenu(GetWorldToScreen({n->x, AnimalRenderer::Height(n->species) * 0.5f, n->z}, camera.Get()));
@@ -737,16 +999,42 @@ int main(int argc, char** argv) {
 #endif
 
         if (in.tap) {
-            if (hud.ShopOpen()) {
+            if (hud.DialogueOpen()) {
+                // A conversation: a tap on an option chooses it, a tap on the box of a plain page goes on to the next.
+                const int choice = hud.DialogueAt(in.tapPos);
+                if (choice >= 0) game.DialogueChoose(choice);
+                else if (choice == Hud::kDialogueContinue) game.DialogueChoose(-1);
+            } else if (hud.BankOpen()) {
+                // The bank window is a dialog: it takes every tap until it is closed.
+                const Hud::BankHit h = hud.BankAt(in.tapPos);
+                if (h.kind == Hud::BankHitKind::BankCell && h.index < static_cast<int>(bank.Slots().size())) {
+                    game.BankWithdraw(bank.Slots()[static_cast<size_t>(h.index)].item, hud.BankQuantity());
+                    hud.BankPage(0);   // (a page that has emptied is clamped back)
+                } else if (h.kind == Hud::BankHitKind::BagCell) {
+                    game.BankDeposit(bag.Slot(h.index).item, hud.BankQuantity());
+                } else if (h.kind == Hud::BankHitKind::DepositAll) {
+                    game.BankDepositAll();
+                } else if (h.kind == Hud::BankHitKind::Qty) {
+                    hud.SetBankQuantity(h.index);
+                } else if (h.kind == Hud::BankHitKind::PagePrev) {
+                    hud.BankPage(-1);
+                } else if (h.kind == Hud::BankHitKind::PageNext) {
+                    hud.BankPage(1);
+                } else if (h.kind == Hud::BankHitKind::Close || !hud.BankHits(in.tapPos)) {
+                    hud.CloseBank();
+                }
+            } else if (hud.ShopOpen()) {
                 // The shop window is a dialog: it takes every tap until it is closed.
                 const Hud::ShopHit h = hud.ShopAt(in.tapPos);
                 const ShopMenu menu = hud.Shop();
                 const std::vector<ShopLine>& list = hud.ShopSellTab() ? menu.sell : menu.buy;
                 if (h.kind == Hud::ShopHitKind::Buy && h.index < static_cast<int>(list.size())) {
                     game.Buy(menu.shop, list[h.index].index, hud.ShopQuantity());
+                    audio.Play(Sfx::Coin);
                     hud.RefreshShop(game.BuildShopMenu(menu.shop));
                 } else if (h.kind == Hud::ShopHitKind::Sell && h.index < static_cast<int>(list.size())) {
                     game.Sell(menu.shop, list[h.index].item, hud.ShopQuantity());
+                    audio.Play(Sfx::Coin);
                     hud.RefreshShop(game.BuildShopMenu(menu.shop));
                 } else if (h.kind == Hud::ShopHitKind::TabBuy) {
                     hud.SetShopTab(false);
@@ -768,12 +1056,16 @@ int main(int argc, char** argv) {
                 if (h.kind == Hud::MakeHitKind::Option && h.index < static_cast<int>(menu.options.size())) {
                     const MakeOption& o = menu.options[h.index];
                     if (menu.kind == MakeMenu::Kind::Smelt) game.StartSmelt(static_cast<Tier>(o.index), hud.MakeQuantity());
+                    else if (menu.kind == MakeMenu::Kind::Craft) game.StartCraft(o.index, hud.MakeQuantity());
                     else game.StartSmith(static_cast<Tier>(menu.tier), static_cast<GearType>(o.index), hud.MakeQuantity());
-                    if (game.Current() == Activity::Smelting || game.Current() == Activity::Smithing) hud.CloseMake();   // (otherwise it says why not)
+                    if (game.Current() == Activity::Smelting || game.Current() == Activity::Smithing || game.Current() == Activity::Crafting) hud.CloseMake();   // (otherwise it says why not)
                 } else if (h.kind == Hud::MakeHitKind::Tier) {
                     hud.OpenMake(game.BuildSmithMenu(static_cast<Tier>(h.index)));
                 } else if (h.kind == Hud::MakeHitKind::Qty) {
                     hud.SetMakeQuantity(h.index);
+                } else if (h.kind == Hud::MakeHitKind::Page) {
+                    audio.Play(Sfx::Click);
+                    hud.StepMakePage(h.index);
                 } else if (h.kind == Hud::MakeHitKind::Close || !hud.MakeHits(in.tapPos)) {
                     hud.CloseMake();
                 }
@@ -783,15 +1075,25 @@ int main(int argc, char** argv) {
                 if (row >= 0) {
                     const MenuEntry chosen = hud.MenuEntryRef(row);
                     hud.CloseMenu();
-                    game.Perform(chosen);
+                    if (chosen.target.kind == TargetKind::Adventurer) {   // another "player": examine them, or have a word
+                        const Adventurer* ad = advs.Find(chosen.target.id);
+                        if (ad && chosen.act == MenuAct::Attack) game.TapFoe(kFoeIdBase + ad->id);
+                        if (ad && chosen.act == MenuAct::ExamineTarget) hud.Say(advs.ExamineText(ad->id), {255, 224, 120, 255});
+                        if (ad && chosen.act == MenuAct::TalkTo) {
+                            const std::string reply = advs.TalkLine(ad->id, roll);
+                            hud.Say(ad->name + ": " + (reply.empty() ? std::string("Hello there.") : reply), {150, 235, 255, 255});
+                        }
+                    } else {
+                        game.Perform(chosen);
+                    }
                 } else {
                     hud.CloseMenu();
                 }
             } else {
                 const bool onUi = hud.Hits(in.tapPos);
                 const int tab = hud.TabAt(in.tapPos);
-                if (tab == Hud::kTabMenu) { game.Cancel(); player.Stop(); openCreator(); continue; }   // "Menu" tab = change appearance (for now)
                 if (tab >= 0) {
+                    audio.Play(Sfx::Click, 0.6f);
                     hud.ToggleTab(tab);
                 } else if (onUi) {
                     // Bag: tap an item to select it (tap again to deselect), then tap one of its buttons.
@@ -800,7 +1102,40 @@ int main(int argc, char** argv) {
                     ItemAction action = ItemAction::Drop;
                     const int styleBtn = hud.StyleAt(in.tapPos);
                     const int wornSlot = hud.EquipSlotAt(in.tapPos);
-                    if (wornSlot >= 0) {
+                    const int spellBtn = hud.SpellAt(in.tapPos);
+                    const Hud::SettingsHit setHit = hud.SettingsAt(in.tapPos);
+                    if (setHit != Hud::SettingsHit::None) {   // the Menu tab: appearance, music and sound volume
+                        audio.Play(Sfx::Click);
+                        if (setHit == Hud::SettingsHit::Help || setHit == Hud::SettingsHit::Back) {
+                            hud.SetHelpPage(setHit == Hud::SettingsHit::Help);
+                            continue;
+                        }
+                        if (setHit == Hud::SettingsHit::Appearance) {
+                            hud.CloseTabs();
+                            game.Cancel();
+                            player.Stop();
+                            openCreator();
+                            continue;
+                        }
+                        const float step = setHit == Hud::SettingsHit::MusicUp || setHit == Hud::SettingsHit::SfxUp ? 0.1f : -0.1f;
+                        if (setHit == Hud::SettingsHit::MusicUp || setHit == Hud::SettingsHit::MusicDown) settings.music = std::clamp(std::round((settings.music + step) * 10.0f) / 10.0f, 0.0f, 1.0f);
+                        else settings.sfx = std::clamp(std::round((settings.sfx + step) * 10.0f) / 10.0f, 0.0f, 1.0f);
+                        audio.SetMusicVolume(settings.music);
+                        audio.SetSfxVolume(settings.sfx);
+                        hud.SetVolumes(settings.music, settings.sfx);
+                        if (!args.shot) {
+                            const std::string text = SerializeSettings(settings);
+                            SaveFileText(kSettingsFile, (char*)text.c_str());
+                        }
+                    } else if (hud.SpellPageStep(in.tapPos) != 0) {
+                        audio.Play(Sfx::Click);
+                        hud.StepSpellPage(hud.SpellPageStep(in.tapPos));
+                    } else if (spellBtn >= 0) {
+                        game.SetSpell(spellBtn);
+                        spellSel = game.SpellIndex();
+                        hud.SetSpell(spellSel);
+                        saveProgress();
+                    } else if (wornSlot >= 0) {
                         game.Unequip(static_cast<EquipSlot>(wornSlot));   // tap a worn piece to take it off
                     } else if (slot >= 0) {
                         if (game.UseSlot() >= 0) {
@@ -830,6 +1165,7 @@ int main(int argc, char** argv) {
         if (args.doSmithTier >= 0 && frame == 6)
             game.StartSmith(static_cast<Tier>(std::clamp(args.doSmithTier, 0, kTierCount - 1)), static_cast<GearType>(std::clamp(args.doSmithType, 0, kGearTypeCount - 1)), 99);
         if (args.talk > 0 && frame == 5) game.TapPerson(args.talk);
+        if (args.bank && frame == 6) hud.OpenBank();
         if (args.shop >= 0 && frame == 6) hud.OpenShop(game.BuildShopMenu(std::clamp(args.shop, 0, shops.Count() - 1)));
         if (args.make >= 0 && frame == 6) hud.OpenMake(args.make == 0 ? game.BuildSmeltMenu() : game.BuildSmithMenu(static_cast<Tier>(std::clamp(args.makeTier, 0, kTierCount - 1))));
         if (frame == 5) {   // dev: pretend taps
@@ -839,6 +1175,7 @@ int main(int argc, char** argv) {
             if (args.tapRock >= 0) game.TapRock(args.tapRock);
             if (args.tapStation >= 0) game.TapStation(args.tapStation);
             if (args.light) game.DoItemAction(bag.FindSlot(Item::Logs), ItemAction::Light);
+            if (args.bonfire) game.DoItemAction(bag.FindSlot(Item::Logs), ItemAction::Bonfire);   // dev: four logs, lit as a bonfire
             if (args.cook) {
                 if (const Fire* f = fires.NearestBurning(player.Tile())) game.TapFire(f->id);
             }
@@ -858,10 +1195,46 @@ int main(int argc, char** argv) {
         fires.Update(dt, &map);
         ground.Update(dt);
         npcs.Update(dt, map, player.Tile(), roll);
+        advWorld.hero = player.Tile();
+        advWorld.heroX = player.X();
+        advWorld.heroZ = player.Z();
+        advWorld.heroAlive = skills.Hp() > 0;
+        advWorld.heroInDanger = IsDangerousArea(map.AreaAt(player.Tile().x, player.Tile().z));
+        advWorld.heroSkulled = game.Skulled();
+        advWorld.heroCombat = skills.CombatLevel();
+        advWorld.heroFighter = game.HeroFighter();
+        advs.Update(dt, advWorld);
+        for (const AdvChat& c : advs.TakeChat()) {   // what people nearby say goes in the chat box too
+            const float dx = c.x - player.X(), dz = c.z - player.Z();
+            const float range = c.major ? 26.0f : 14.0f;
+            if (dx * dx + dz * dz < range * range) hud.Say(c.name + ": " + c.text, {150, 235, 255, 255});
+        }
+        if ((rankLeft -= dt) <= 0.0f) {   // the hiscores for the help page
+            rankLeft = 3.0f;
+            std::vector<std::string> lines = {TextFormat("Players online: %d", advs.Online()), "Hiscores (total level):"};
+            const std::vector<AdvRank> rank = advs.Ranking(look.name, skills.TotalLevel(), skills.CombatLevel());
+            for (size_t i = 0; i < rank.size() && i < 8; ++i)
+                lines.push_back(TextFormat("%2d. %s%s  total %d, combat %d", (int)i + 1, rank[i].name.c_str(), rank[i].hero ? " (you)" : "", rank[i].total, rank[i].combat));
+            for (size_t i = 0; i < rank.size(); ++i)
+                if (rank[i].hero) lines.push_back(TextFormat("Your rank: %d of %d (total level %d)", (int)i + 1, (int)rank.size(), rank[i].total));
+            lines.push_back("");   // the Abyss: who has killed whom
+            lines.push_back("Abyss fighters (players killed / times killed):");
+            const std::vector<PkRank> pk = advs.PkRanking(look.name, game.PvpKills(), game.PvpDeaths());
+            if (pk.empty()) lines.push_back("Nobody has fought in the Abyss yet.");
+            for (size_t i = 0; i < pk.size() && i < 5; ++i)
+                lines.push_back(TextFormat("%d. %s%s  %d / %d", (int)i + 1, pk[i].name.c_str(), pk[i].hero ? " (you)" : "", pk[i].kills, pk[i].deaths));
+            lines.push_back(TextFormat("Your record: %d killed, %d times killed", game.PvpKills(), game.PvpDeaths()));
+            hud.SetPlayerLines(lines);
+        }
+        if (!args.shot && (advSaveLeft -= dt) <= 0.0f) {
+            advSaveLeft = 45.0f;
+            saveProgress();
+        }
         game.Update(dt);
         heroBar = std::max(0.0f, heroBar - dt);
         if (game.FightTarget() >= 0) heroBar = 6.0f;
         camera.Follow(player.X(), player.Z(), dt);
+        camera.Avoid([&](Vector3 from, Vector3 to) { return loaded[style] && towns[style].SegmentBlocked(from, to, player.Tile()); }, dt);   // never behind a building
         marker.age += dt;
         const TileCoord pt = player.Tile();
         const std::string& area = map.AreaAt(pt.x, pt.z);
@@ -869,8 +1242,33 @@ int main(int argc, char** argv) {
             lastArea = area;
             if (!area.empty()) hud.ShowArea(area);
         }
+        audio.Update(dt, area);
+        {   // the sound of the work: a chop, a clink or a splash in time with the swings
+            const Activity act = game.Current();
+            if (act != lastActivity) {
+                lastActivity = act;
+                actSound = 0.5f;
+            }
+            const bool working = act == Activity::Chopping || act == Activity::Mining || act == Activity::Smithing || act == Activity::Fishing;
+            if (working) {
+                actSound -= dt;
+                if (actSound <= 0.0f) {
+                    audio.Play(act == Activity::Chopping ? Sfx::Chop : (act == Activity::Fishing ? Sfx::Splash : Sfx::Mine), 0.7f);
+                    actSound = act == Activity::Chopping ? 1.2f : (act == Activity::Fishing ? 2.4f : 1.4f);
+                }
+            }
+        }
         if (hud.MakeOpen() && player.Moving()) hud.CloseMake();   // he walked off: the dialog goes away
         if (hud.ShopOpen() && player.Moving()) hud.CloseShop();
+        if (hud.BankOpen() && player.Moving()) hud.CloseBank();
+        if (game.Dialogue().open && player.Moving()) game.DialogueClose();
+        hud.SetDialogue(game.Dialogue());
+        hud.SetPlayerTile(player.Tile());
+        if (hud.OpenTab() == Hud::kTabMap) hud.SetQuestMarkers(game.QuestMarkers());
+        hud.SetAttackKind(game.Kind());
+        hud.SetPoisoned(game.Poisoned());
+        hud.SetCombatStyle(game.Style());
+        effects.Update(dt);
         hud.Update(dt);
         hud.SetUseSlot(game.UseSlot());
 
@@ -890,6 +1288,11 @@ int main(int argc, char** argv) {
         pose.strikeLeft = game.StrikeLeft();
         pose.time = args.shot ? frame * dt : (float)GetTime();
         pose.gear = LookOf(equip, bag, skills);
+        {   // the axe he chops with
+            Tier at;
+            const Item axe = game.AxeInUse();
+            if (axe != Item::None && GearOf(axe, &at, nullptr)) pose.gear.axe = std::string("held_") + TierKey(at) + "_hatchet";
+        }
         pose.weaponAnim = equip.Anim();
         pose.workPhase = game.WorkPhase();
         pose.blockAge = game.BlockAge();
@@ -903,6 +1306,7 @@ int main(int argc, char** argv) {
             pose.blockLanded = args.blockHit;
         }
         lit.SetFrame(cam.position, args.shot ? frame * dt : (float)GetTime(), hi);
+        town.Stream(player.X(), player.Z(), args.shot ? 1000 : 2);   // bring in the ground around him (the nearest of it on the first frame), drop what is far away
         BeginDrawing();
         if (sunShadows) {   // pass 1: depth from the sun's point of view
             town.SetShadowSampling(lit, false);
@@ -932,20 +1336,23 @@ int main(int argc, char** argv) {
                 if (map.Stations()[i].Tile() == TileCoord{(int)workX, (int)workZ}) busyStation = (int)i;
         props.DrawStations(map.Stations(), busyStation, pose.time, player.X(), player.Z());
         props.DrawGroundItems(ground, pose.time, player.X(), player.Z());
+        effects.Draw();
         animals.SetShadowSampling(lit, sunShadows);
         for (const Npc& n : npcs.All())
-            if (animals.Visible(n, player.X(), player.Z())) animals.Draw(n, pose.time);
+            if (n.Info().rig != Rig::Human && animals.Visible(n, player.X(), player.Z())) animals.Draw(n, pose.time);
         if (args.zoo > 0) {   // dev: a row of every animal (zoo 11-15 = goblins only)
             const int zmode = args.zoo >= 10 ? args.zoo - 10 : args.zoo, sp0 = args.zoo >= 10 ? 3 : 0;
             int k = 0;
-            for (int sp = sp0; sp < kSpeciesCount; ++sp)
+            const int spFrom = args.zooFrom >= 0 ? args.zooFrom : sp0, spTo = args.zooTo >= 0 ? std::min(args.zooTo + 1, kSpeciesCount) : kSpeciesCount;
+            for (int sp = spFrom; sp < spTo; ++sp)
                 for (int cw = 0; cw < 2; ++cw, ++k) {
+                    if (GetSpecies(static_cast<Species>(sp)).rig == Rig::Human) continue;
                     Npc z;
                     z.id = k + 1;
                     z.species = static_cast<Species>(sp);
                     z.colorway = cw;
                     z.x = player.X() + (cw * 2 - 1) * 1.3f;
-                    z.z = player.Z() + 2.0f + (sp - sp0) * 1.9f;
+                    z.z = player.Z() + 2.0f + (sp - spFrom) * 1.9f;
                     z.facing = 3.14159f + 0.5f * (k % 3 - 1);
                     const float zt = args.atime >= 0.0f ? args.atime : pose.time;
                     if (zmode == 2) { z.path.push_back({0, 0}); z.walkPhase = zt * 6.0f; }
@@ -954,6 +1361,128 @@ int main(int argc, char** argv) {
                     if (zmode == 5) { z.dead = true; z.deathT = std::fmod(zt, 3.0f); }
                     animals.Draw(z, pose.time);
                 }
+        }
+        // People (shopkeepers, bankers, smiths, villagers) and the people-shaped monsters (zombies, skeletons, trolls, mummies and the
+        // fighters of the Abyss): the same modular body as the hero, so they cost no extra models.
+        auto bodyOf = [&](const PersonLook& pl) {
+            Appearance pa;
+            pa.female = pl.female;
+            const std::vector<int> hairs = cat.HairFor(pa.female);
+            pa.hair = hairs.empty() ? 0 : hairs[pl.hairPick % hairs.size()];
+            pa.skin = pl.skin;
+            pa.hairColor = pl.hairColor;
+            pa.shirt = pl.shirt;
+            pa.shirtColor = pl.shirtColor;
+            pa.pants = pl.pants;
+            pa.pantsColor = pl.pantsColor;
+            pa.shoes = pl.shoes;
+            pa.shoesColor = pl.shoesColor;
+            Sanitize(pa, nHair, nShirt, nPants, nShoes);
+            return pa;
+        };
+        for (const Person& pr : people.All()) {
+            const float dx = pr.x - player.X(), dz = pr.z - player.Z();
+            if (dx * dx + dz * dz > 45.0f * 45.0f) continue;
+            const PersonInfo& info = *pr.info;
+            CharacterPose cp;
+            cp.x = pr.x;
+            cp.z = pr.z;
+            cp.facing = pr.facing;
+            cp.time = pose.time + pr.id * 1.37f;
+            cp.gear = GearLookOf(info.weapon, info.shield, info.helm, info.body, info.legs, Item::None);
+            if (info.work == PersonWork::Smith) {
+                cp.anim = Anim::Smith;
+                cp.workPhase = std::fmod(cp.time / 0.75f, 1.0f);
+                for (const StationDef& st : map.Stations()) {   // sparks fly from the anvil he is working at
+                    const float ax = st.x - pr.x, az = st.z - pr.z;
+                    if (st.kind == "anvil" && ax * ax + az * az < 2.4f * 2.4f && cp.workPhase > 0.001f)
+                        props.DrawSparks({st.x, 0.82f, st.z}, cp.workPhase / 0.30f, cp.time, {255, 190, 80, 255});
+                }
+            }
+            chars.Draw(bodyOf(info.look), cp);
+            if (!sunShadows) DrawCylinder({pr.x, 0.02f, pr.z}, 0.46f, 0.46f, 0.01f, 16, Fade(BLACK, 0.28f));
+        }
+        // The other adventurers: the same body, wearing what they wear, doing what they do.
+        for (const Adventurer& ad : advs.All()) {
+            if (ad.pvp.dead) continue;
+            const float dx = ad.x - player.X(), dz = ad.z - player.Z();
+            if (dx * dx + dz * dz > 45.0f * 45.0f) continue;
+            CharacterPose cp;
+            cp.x = ad.x;
+            cp.z = ad.z;
+            cp.facing = ad.facing;
+            cp.phase = ad.walkPhase;
+            cp.moving = ad.Moving();
+            cp.time = pose.time + ad.id * 1.37f;
+            cp.gear = LookOf(ad.equip, ad.bag, ad.skills);
+            {
+                Tier at;
+                const Item axe = BestHatchet(ad.bag, ad.skills.Level(Skill::Woodcutting));
+                if (axe != Item::None && GearOf(axe, &at, nullptr)) cp.gear.axe = std::string("held_") + TierKey(at) + "_hatchet";
+            }
+            cp.weaponAnim = ad.equip.Anim();
+            cp.workPhase = ad.workPhase;
+            switch (ad.act) {
+                case AdvAct::Chop: cp.anim = Anim::Chop; break;
+                case AdvAct::Fish: cp.anim = Anim::Fish; break;
+                case AdvAct::Mine: cp.anim = Anim::Mine; break;
+                case AdvAct::Smelt: cp.anim = Anim::Smelt; break;
+                case AdvAct::Smith: cp.anim = Anim::Smith; break;
+                case AdvAct::Cook: cp.anim = Anim::Cook; break;
+                case AdvAct::Light: cp.anim = Anim::Light; break;
+                case AdvAct::Bury: cp.anim = Anim::Bury; break;
+                case AdvAct::Fight: cp.anim = Anim::Attack; break;
+                default: break;
+            }
+            cp.strikeAge = ad.strikeAge;
+            cp.strikeLeft = ad.strikeLeft;
+            if (ad.hurtAge < 0.75f) {
+                cp.blockAge = ad.hurtAge;
+                cp.blockLanded = true;
+            }
+            chars.Draw(bodyOf(ad.look), cp);
+            if (!sunShadows) DrawCylinder({ad.x, 0.02f, ad.z}, 0.46f, 0.46f, 0.01f, 16, Fade(BLACK, 0.28f));
+        }
+        for (const Npc& n : npcs.All()) {
+            const SpeciesInfo& si = n.Info();
+            if (si.rig != Rig::Human || (n.dead && n.deathT > Npcs::kCorpseSeconds)) continue;
+            const float dx = n.x - player.X(), dz = n.z - player.Z();
+            if (dx * dx + dz * dz > 45.0f * 45.0f) continue;
+            CharacterPose cp;
+            cp.x = n.x;
+            cp.z = n.z;
+            cp.facing = n.facing;
+            cp.time = pose.time + n.id * 1.37f;
+            cp.moving = n.Moving();
+            cp.phase = n.walkPhase;
+            cp.gear = GearLookOf(si.weapon, si.shield, si.helm, si.body, si.legs, Item::None);
+            if (IsBow(si.weapon)) cp.weaponAnim = WeaponAnim::Shoot;
+            else if (IsStaff(si.weapon)) cp.weaponAnim = WeaponAnim::Cast;
+            else {
+                GearType g;
+                if (GearOf(si.weapon, nullptr, &g)) cp.weaponAnim = AnimOf(g);
+            }
+            if (!n.dead && (n.attackT < 0.7f || (n.hunting && !n.Moving()))) cp.anim = Anim::Attack;
+            cp.strikeAge = n.attackT;
+            if (n.hurtT < 0.75f) {   // struck: he flinches (and raises his guard)
+                cp.blockAge = n.hurtT;
+                cp.blockLanded = true;
+            }
+            const float grow = n.dead ? 1.0f : 0.35f + 0.65f * std::min(1.0f, n.spawnT / 0.9f);
+            cp.scale = si.scale * grow;
+            cp.tintSkin = si.tintSkin;
+            cp.skinTint = {si.skinTint.r, si.skinTint.g, si.skinTint.b, 255};
+            cp.tintShirt = si.tintShirt;
+            cp.shirtTint = {si.shirtTint.r, si.shirtTint.g, si.shirtTint.b, 255};
+            cp.tintPants = si.tintPants;
+            cp.pantsTint = {si.pantsTint.r, si.pantsTint.g, si.pantsTint.b, 255};
+            cp.hideHair = si.bald;
+            if (n.dead) {
+                const float u = std::clamp(n.deathT / 0.9f, 0.0f, 1.0f);
+                cp.fall = u * u * (3.0f - 2.0f * u);
+            }
+            chars.Draw(bodyOf(si.look), cp);
+            if (!sunShadows && (!n.dead || n.deathT < 1.5f)) DrawCylinder({n.x, 0.02f, n.z}, 0.46f * cp.scale, 0.46f * cp.scale, 0.01f, 16, Fade(BLACK, 0.28f));
         }
         chars.Draw(look, pose);
         if (working && game.Current() == Activity::Mining) {            // sparks fly from the rock each time the pick lands
@@ -974,6 +1503,28 @@ int main(int argc, char** argv) {
             if (n.Alive() && n.hp < n.maxHp && (n.hurtT < 6.0f || n.attackT < 6.0f))
                 hud.QueueBar({n.x, AnimalRenderer::Height(n.species) + 0.18f, n.z}, (float)n.hp / (float)n.maxHp, false);
         if (heroBar > 0.0f) hud.QueueBar({player.X(), 2.0f, player.Z()}, (float)skills.Hp() / (float)std::max(1, skills.MaxHp()), true);
+        const bool heroInDanger = IsDangerousArea(map.AreaAt(pt.x, pt.z));
+        for (const Adventurer& ad : advs.All()) {
+            if (ad.pvp.dead) continue;
+            const float dx = ad.x - player.X(), dz = ad.z - player.Z();
+            if (dx * dx + dz * dz > 22.0f * 22.0f) continue;
+            const bool real = ad.kind == AdvKind::Real;
+            Color nameColor = real ? Color{255, 255, 255, 255} : Color{190, 215, 255, 255};
+            std::string nameText = ad.name;
+            if (heroInDanger) {   // in the Abyss every player is somebody to fight: their level, coloured against his like a creature's
+                const Rgb lc = LevelColor(skills.CombatLevel(), ad.Combat());
+                nameColor = {lc.r, lc.g, lc.b, 255};
+                nameText += " (level-" + std::to_string(ad.Combat()) + ")";
+            }
+            hud.QueueLabel({ad.x, 2.12f, ad.z}, nameText, nameColor, 12.0f);
+            if (ad.pvp.skull > 0.0f) hud.QueueSkull({ad.x, 2.5f, ad.z});
+            if (!ad.speech.text.empty()) hud.QueueLabel({ad.x, 2.5f, ad.z}, ad.speech.text, {255, 236, 90, 255}, 13.0f);
+            if (((ad.kind == AdvKind::Real && ad.act == AdvAct::Fight) || ad.hurtAge < 6.0f || ad.pvp.fightingHero) && ad.skills.Hp() < ad.skills.MaxHp())
+                hud.QueueBar({ad.x, 2.0f, ad.z}, (float)ad.skills.Hp() / (float)std::max(1, ad.skills.MaxHp()), false);
+        }
+        if (game.Skulled()) hud.QueueSkull({player.X(), 2.35f, player.Z()});
+        hud.SetSkullTimer(game.SkullLeft());
+        hud.SetAbyssLevel(game.AbyssLevel());
         hud.DrawWorld(cam);
         hud.Draw(debug, TextFormat("Journey prototype  |  %d FPS  |  tile %d,%d  |  style %s  |  F3 debug  F4 style  F5 shadows  F6 character", GetFPS(),
                                     pt.x, pt.z, kStyleName[style]));
@@ -986,6 +1537,7 @@ int main(int argc, char** argv) {
         }
     }
 
+    saveProgress();   // (and when he quits)
     animals.Unload();
     props.Unload();
     chars.Unload();

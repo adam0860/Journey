@@ -14,8 +14,8 @@
 
 namespace journey {
 
-enum class RockKind { Copper, Tin, Iron, Coal, Mithril };
-constexpr int kRockKindCount = 5;
+enum class RockKind { Copper, Tin, Iron, Coal, Mithril, Clay, Silver, Gold, Gems, Adamant };
+constexpr int kRockKindCount = 10;
 
 struct RockInfo {
     const char* name;     // "Copper rocks"
@@ -35,6 +35,9 @@ constexpr float kRockGrowSeconds = 1.2f;   // a rock that has grown back scales 
 
 // Chance (0..1) that one swing gets the ore, for a Mining level.
 float MineChance(RockKind k, int miningLevel);
+
+// What a successful swing gives (`roll` in [0,1)): the rock's ore, or for gem rocks one of three uncut gems.
+Item RockYield(RockKind k, double roll);
 
 // The best pickaxe in the bag that the Mining level allows (Item::None if there is none).
 Item BestPickaxe(const Inventory& bag, int miningLevel);

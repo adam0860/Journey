@@ -34,16 +34,22 @@ struct CharacterCatalog {
 };
 
 // What the hero is doing with his hands (each plays its own animation, and some put a tool in his right hand).
-enum class Anim { None, Chop, Fish, Light, Cook, Attack, Bury, Mine, Smelt, Smith };
+enum class Anim { None, Chop, Fish, Light, Cook, Attack, Bury, Mine, Smelt, Smith, Craft };
 
 // The model files for what he wears and wields (empty = nothing). The game fills these in from his Equipment.
 struct GearLook {
-    std::string weapon;   // "held_bronze_sword": in his right fist
+    std::string weapon;   // "held_bronze_sword": in his right fist (a staff too)
+    std::string bow;      // "held_shortbow": in his LEFT hand (the other hand draws the string)
     std::string shield;   // "held_iron_shield": on his left forearm
     std::string helm;     // "gear_steel_helm"
     std::string body;     // "gear_bronze_body"   (+ _torso_m / _arm_l ... parts)
     std::string legs;     // "gear_mithril_legs"  (+ _hips_m / _leg_l ... parts)
     std::string pick;     // "held_iron_pickaxe": the pickaxe he mines with
+    std::string axe;      // "held_iron_hatchet": the axe he chops with (empty = the plain "held_axe")
+    std::string amulet;   // "gear_amulet_ruby": the chain and pendant on his chest
+    std::string boots;    // "gear_iron_boots" (+ _leg_l / _leg_r parts)
+    std::string gloves;   // "gear_steel_gauntlets" (+ _arm_l / _arm_r parts)
+    std::string cape;     // "gear_cape_mining": hangs from his shoulders
 };
 
 struct CharacterPose {
@@ -61,6 +67,12 @@ struct CharacterPose {
     float workPhase = 0;     // Mine / Smith: 0..1 through a swing; the tool lands where it wraps round from 1 to 0
     float blockAge = 99;     // seconds since a creature began a strike at him (he raises his shield or guard, and flinches if it lands)
     bool blockLanded = false;
+    // For the people-shaped monsters: a bigger body, and colours that replace the skin / clothes the look picked.
+    float scale = 1.0f;
+    bool tintSkin = false, tintShirt = false, tintPants = false, hideHair = false;
+    Color skinTint = {255, 255, 255, 255}, shirtTint = {255, 255, 255, 255}, pantsTint = {255, 255, 255, 255};
+    // Falling over (a dead monster): 0 = standing, 1 = lying on his back.
+    float fall = 0.0f;
 };
 
 class CharacterRenderer {

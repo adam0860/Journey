@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "game/Skilling.h"
+
 namespace journey {
 
 void Forest::Init(const std::vector<TreeDef>& defs) {
@@ -40,7 +42,7 @@ bool Forest::Fell(int index) {
     TreeState& t = trees_[index];
     if (t.stump) return false;
     t.stump = true;
-    t.regrowLeft = kRegrowSeconds;
+    t.regrowLeft = GetTreeInfo(t.def.kind).regrow;
     return true;
 }
 

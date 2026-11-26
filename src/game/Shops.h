@@ -9,19 +9,26 @@
 #include <vector>
 
 #include "game/Inventory.h"
+#include "game/Skills.h"
 
 namespace journey {
 
 // Kinds of goods a shop may buy (a bit mask).
 enum ShopCategory : unsigned {
     kCatFood = 1, kCatWeapon = 2, kCatArmour = 4, kCatOre = 8, kCatBar = 16, kCatTool = 32, kCatMisc = 64,
-    kCatEverything = 127,
+    kCatRanged = 128,   // bows and arrows
+    kCatMagic = 256,    // runes, staffs and wizard robes
+    kCatEverything = 511,
 };
 unsigned CategoryOf(Item item);
 
 struct ShopStockDef {
     Item item;
-    int count;   // how many the shelf normally holds
+    int count;              // how many the shelf normally holds
+    const char* quest = "";   // a quest (its key) that must be finished before the shop sells this ("" = always): a quest's reward can be a shop
+    int reqLevel = 0;         // a skill level the hero must have reached (the skill capes: 99)
+    Skill reqSkill = Skill::Attack;
+    int reqQuestPoints = 0;   // quest points (quests finished) he must have; -1 = every quest there is
 };
 
 struct ShopDef {
@@ -38,7 +45,7 @@ int ShopIndex(const std::string& key);   // -1 if unknown
 
 constexpr float kRestockSeconds = 12.0f;   // a missing item comes back this often
 constexpr float kExcessSeconds = 40.0f;    // surplus the shop bought fades at this pace
-constexpr int kMaxShopLines = 30;
+constexpr int kMaxShopLines = 40;
 
 class Shops {
 public:

@@ -88,6 +88,10 @@ GOBLIN = [   # 0 = a plain goblin (club, rags); 1 = a goblin warrior (iron cap w
          wood='#8a5a30', wood_dark='#5a3a1c', metal='#8a8d94', metal_dark='#5d6068', hair='#2b2a1c', bone='#e9dfc6', mouth='#4a1f1f'),
     dict(skin='#7f9332', skin_dark='#626f26', cloth='#a1302b', cloth_dark='#6b1f1c', eye='#ff6a2a', pupil='#1a1a14', tooth='#efe6c8',
          wood='#7a4a28', wood_dark='#4e3018', metal='#7d818a', metal_dark='#53565e', hair='#1c1a12', bone='#e9dfc6', mouth='#4a1f1f'),
+    dict(skin='#b8864a', skin_dark='#8f6633', cloth='#4c4036', cloth_dark='#2e261f', eye='#ffe04a', pupil='#1a1a14', tooth='#efe6c8',
+         wood='#6a4426', wood_dark='#46301a', metal='#8a8d94', metal_dark='#5d6068', hair='#2a1c10', bone='#e9dfc6', mouth='#4a1f1f'),
+    dict(skin='#c2362a', skin_dark='#8f2219', cloth='#2c1a30', cloth_dark='#1a0f1d', eye='#ffe040', pupil='#1a1a14', tooth='#f4ecd0',
+         wood='#4a2a1a', wood_dark='#2a180e', metal='#6a5a62', metal_dark='#3e343a', hair='#1c0a0a', bone='#e9dfc6', mouth='#3a0f0f'),
 ]
 GOB_JOINTS = {'body': (0.0, 0.52, 0.0), 'head': (0.0, 0.84, 0.05), 'arm_l': (0.17, 0.82, 0.03), 'arm_r': (-0.17, 0.82, 0.03),
               'leg_l': (0.07, 0.50, 0.0), 'leg_r': (-0.07, 0.50, 0.0)}
@@ -260,8 +264,8 @@ def bovine(species, cw, c, adult):
 def main():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     os.makedirs(OUT, exist_ok=True)
-    for f in os.listdir(OUT):
-        if f.endswith('.glb'):
+    for f in os.listdir(OUT):   # (only our own files: tools/build_monsters.py keeps its models in the same folder)
+        if f.endswith('.glb') and f.split('_')[0] in ('chicken', 'cow', 'calf', 'goblin'):
             os.remove(os.path.join(OUT, f))
     total = 0
     for cw, c in enumerate(CHICKEN):

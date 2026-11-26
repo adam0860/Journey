@@ -13,3 +13,5 @@ android/build/
 .idea/
 __pycache__/
 *.pyc
+build_logs/
+shots/

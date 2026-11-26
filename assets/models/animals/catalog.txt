@@ -2,7 +2,7 @@
 colorways chicken 2
 colorways cow 2
 colorways calf 2
-colorways goblin 2
+colorways goblin 4
 joint goblin body 0.0000 0.5200 0.0000
 joint goblin head 0.0000 0.8400 0.0500
 joint goblin arm_l 0.1700 0.8200 0.0300

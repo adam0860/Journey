@@ -27,28 +27,31 @@ float AnimalRenderer::Height(Species s) {
 bool AnimalRenderer::Load(const LitShader& shader, const char* dir) {
     dir_ = dir;
     shader_ = &shader;
-    char* text = LoadFileText(TextFormat("%s/catalog.txt", dir));
-    if (!text) {
-        TraceLog(LOG_WARNING, "ANIMALS: missing %s/catalog.txt (no animals will be drawn)", dir);
-        return false;
-    }
-    std::istringstream in(text);
-    UnloadFileText(text);
-    std::string line;
-    while (std::getline(in, line)) {
-        std::istringstream ls(line);
-        std::string kind;
-        if (!(ls >> kind) || kind.rfind("//", 0) == 0) continue;
-        if (kind == "joint") {
-            std::string species, part;
-            Joint j;
-            ls >> species >> part >> j.x >> j.y >> j.z;
-            joints_[species + "." + part] = j;
-        } else if (kind == "colorways") {
-            std::string species;
-            int n = 1;
-            ls >> species >> n;
-            colorways_[species] = std::max(1, n);
+    // two catalogs: the farm animals and goblins (build_animals.py), and the monsters (build_monsters.py)
+    for (const char* file : {"catalog.txt", "catalog_monsters.txt"}) {
+        char* text = LoadFileText(TextFormat("%s/%s", dir, file));
+        if (!text) {
+            TraceLog(LOG_WARNING, "ANIMALS: missing %s/%s", dir, file);
+            continue;
+        }
+        std::istringstream in(text);
+        UnloadFileText(text);
+        std::string line;
+        while (std::getline(in, line)) {
+            std::istringstream ls(line);
+            std::string kind;
+            if (!(ls >> kind) || kind.rfind("//", 0) == 0) continue;
+            if (kind == "joint") {
+                std::string species, part;
+                Joint j;
+                ls >> species >> part >> j.x >> j.y >> j.z;
+                joints_[species + "." + part] = j;
+            } else if (kind == "colorways") {
+                std::string species;
+                int n = 1;
+                ls >> species >> n;
+                colorways_[species] = std::max(1, n);
+            }
         }
     }
     TraceLog(LOG_INFO, "ANIMALS: %d joints, %d species", (int)joints_.size(), (int)colorways_.size());
@@ -298,6 +301,79 @@ AnimalRenderer::Pose AnimalRenderer::AnimateGoblin(const Npc& n, float time) con
     return p;
 }
 
+// ---------------------------------------------------------------------------------------------- wolves, rats, spiders, the dragon
+
+AnimalRenderer::Pose AnimalRenderer::AnimatePredator(const Npc& n, float time, Rig rig) const {
+    Pose p;
+    const float t = time + n.id * 2.3f;
+    const float ph = n.walkPhase;
+    const bool spider = rig == Rig::Spider, dragon = rig == Rig::Dragon;
+    const float amp = spider ? 0.55f : (dragon ? 0.32f : 0.55f);
+    p.tailRoll = 0.25f * std::sin(t * 2.0f);
+    if (dragon) p.wingRoll = 0.14f + 0.10f * std::sin(t * 1.3f);
+    if (n.Moving()) {
+        const float s = std::sin(ph);
+        p.legFL = p.legBR = s * amp;
+        p.legFR = p.legBL = -s * amp;
+        p.offY = std::fabs(s) * (spider ? 0.012f : (dragon ? 0.03f : 0.02f));
+        p.bodyRoll = (spider ? 0.05f : 0.03f) * s;
+        p.tailRoll += 0.3f * s;
+        p.headPitch = n.hunting ? 0.20f : 0.05f + 0.06f * std::sin(ph * 2.0f);
+        p.bodyPitch = n.hunting && !dragon ? 0.04f : 0.0f;
+        if (dragon) p.wingRoll += 0.10f * std::fabs(s);
+    } else if (n.hunting) {
+        p.headPitch = dragon ? -0.12f : 0.28f + 0.06f * std::sin(t * 6.0f);   // head low and snarling
+        p.bodyPitch = dragon ? 0.0f : 0.05f;
+        p.legFL = -0.10f;
+        p.tailRoll += 0.25f * std::sin(t * 5.0f);
+        if (dragon) p.wingRoll = 0.45f + 0.15f * std::sin(t * 2.5f);
+    } else {
+        const float sniff = std::pow(std::max(0.0f, std::sin(t * 0.8f)), 4.0f);   // now and then a good sniff, otherwise a look about
+        p.headPitch = (spider ? 0.05f : 0.55f) * sniff + 0.04f * std::sin(t * 0.9f);
+        p.headYaw = 0.45f * std::sin(t * 0.55f) * (1.0f - sniff);
+        p.offY = 0.004f * std::sin(t * 2.1f);
+    }
+    // striking: a lunge and a bite (the dragon rears its head back, then lunges and breathes)
+    if (n.attackT < 0.70f) {
+        const float u = n.attackT / 0.70f;
+        const float wind = Smooth(u / 0.30f) * (1.0f - Smooth((u - 0.30f) / 0.10f));
+        const float strike = Smooth((u - 0.30f) / 0.10f) * (1.0f - Smooth((u - 0.45f) / 0.55f));
+        if (dragon) {
+            p.headPitch = Mix(p.headPitch, -0.55f * wind + 0.45f * strike, std::min(1.0f, wind + strike));
+            p.bodyPitch += -0.10f * wind + 0.10f * strike;
+            p.wingRoll += 0.6f * wind;
+        } else {
+            p.headPitch = Mix(p.headPitch, -0.30f * wind + 0.80f * strike, std::min(1.0f, wind + strike));
+            p.offZ += -0.08f * wind + (spider ? 0.20f : 0.34f) * strike;
+            p.bodyPitch += -0.08f * wind + 0.12f * strike;
+            p.legFL += 0.5f * strike;
+            p.legFR += 0.4f * strike;
+        }
+    }
+    if (n.hurtT < 0.5f) {
+        const float d = 1.0f - n.hurtT / 0.5f;
+        p.bodyPitch -= 0.14f * d;
+        p.headPitch -= 0.35f * d;
+        p.bodyRoll += 0.10f * std::sin(n.hurtT * 30.0f) * d;
+        p.tailRoll += 0.6f * d;
+        if (dragon) p.wingRoll += 0.5f * d;
+    }
+    if (n.dead) {
+        const float e = Smooth(n.deathT / (dragon ? 1.6f : 0.9f));
+        p.bodyRoll = (kPi / 2.0f) * e;
+        p.offY = -(spider ? 0.30f : (dragon ? 0.85f : 0.42f)) * e;
+        p.headPitch = Mix(p.headPitch, 0.35f, e);
+        p.headRoll = 0.5f * e;
+        p.spreadLegs = e;
+        p.legFL = 0.3f * e;
+        p.legFR = -0.2f * e;
+        p.legBL = -0.2f * e;
+        p.legBR = 0.2f * e;
+        if (dragon) p.wingRoll = 0.9f * e;
+    }
+    return p;
+}
+
 // ---------------------------------------------------------------------------------------------- draw
 
 void AnimalRenderer::Draw(const Npc& n, float time) {
@@ -310,10 +386,13 @@ void AnimalRenderer::Draw(const Npc& n, float time) {
         return it != joints_.end() ? it->second : Joint{};
     };
     const std::string pre = std::string(sp) + "_" + std::to_string(cw) + "_";
-    const bool chicken = n.species == Species::Chicken;
-    const bool goblin = n.species == Species::Goblin || n.species == Species::GoblinWarrior;
+    const bool chicken = info.rig == Rig::Bird;
+    const bool goblin = info.rig == Rig::Biped;
+    const bool spider = info.rig == Rig::Spider, dragon = info.rig == Rig::Dragon;
+    const bool predator = spider || dragon || (info.rig == Rig::Quad && n.species != Species::Cow && n.species != Species::Calf);
 
-    const Pose p = chicken ? AnimateChicken(n, time) : (goblin ? AnimateGoblin(n, time) : AnimateBovine(n, time, n.species == Species::Calf));
+    const Pose p = chicken ? AnimateChicken(n, time) : (goblin ? AnimateGoblin(n, time)
+                   : (predator ? AnimatePredator(n, time, info.rig) : AnimateBovine(n, time, n.species == Species::Calf)));
     const Joint bj = J("body");
 
     // body transform: tilt about the body centre, nudge, then turn to face and place in the world
@@ -328,7 +407,7 @@ void AnimalRenderer::Draw(const Npc& n, float time) {
 
     // a soft blob shadow on the ground (not for corpses that have sunk into the grass)
     if (!n.dead || n.deathT < 1.5f) {
-        const float r = (chicken ? 0.22f : (goblin ? 0.34f : (n.species == Species::Calf ? 0.42f : 0.72f))) * grow;
+        const float r = (chicken ? 0.22f : (goblin ? 0.34f : std::min(1.6f, 0.46f * info.height))) * grow;
         DrawCylinder({n.x, 0.02f, n.z}, r, r, 0.01f, 14, Fade(BLACK, n.dead ? 0.2f : 0.26f));
     }
 
@@ -348,7 +427,11 @@ void AnimalRenderer::Draw(const Npc& n, float time) {
         DrawPart(pre + "leg_r", J("leg_r"), p.legR, 0, -p.spreadLegs * 0.5f, body);
     } else {
         DrawPart(pre + "head", J("head"), p.headPitch, p.headYaw, p.headRoll, body);
-        DrawPart(pre + "tail", J("tail"), 0, 0, p.tailRoll, body);
+        if (!spider) DrawPart(pre + "tail", J("tail"), 0, 0, p.tailRoll, body);
+        if (dragon) {
+            DrawPart(pre + "wing_l", J("wing_l"), 0, 0, p.wingRoll, body);
+            DrawPart(pre + "wing_r", J("wing_r"), 0, 0, -p.wingRoll, body);
+        }
         DrawPart(pre + "leg_fl", J("leg_fl"), p.legFL, 0, p.spreadLegs * 0.15f, body);
         DrawPart(pre + "leg_fr", J("leg_fr"), p.legFR, 0, -p.spreadLegs * 0.15f, body);
         DrawPart(pre + "leg_bl", J("leg_bl"), p.legBL, 0, p.spreadLegs * 0.15f, body);

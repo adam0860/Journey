@@ -46,6 +46,32 @@ Fighter PlayerFighter(const Skills& skills, CombatStyle style, int attackBonus, 
     return f;
 }
 
+Fighter RangedFighter(const Skills& skills, CombatStyle style, int rangedBonus, int rangedStrengthBonus, int defenceBonus) {
+    Fighter f;
+    f.attackBonus = rangedBonus;
+    f.strengthBonus = rangedStrengthBonus;
+    f.defenceBonus = defenceBonus;
+    f.attack = skills.Level(Skill::Ranged);
+    f.strength = skills.Level(Skill::Ranged);
+    f.defence = skills.Level(Skill::Defence);
+    switch (style) {
+        case CombatStyle::Aggressive: f.styleStrength = 3; break;   // rapid
+        case CombatStyle::Defensive: f.styleDefence = 3; break;     // longrange
+        default: f.styleAttack = 3; break;                          // accurate (controlled does nothing special with a bow)
+    }
+    return f;
+}
+
+Fighter MagicFighter(const Skills& skills, int magicBonus, int defenceBonus) {
+    Fighter f;
+    f.attackBonus = magicBonus;
+    f.defenceBonus = defenceBonus;
+    f.attack = skills.Level(Skill::Magic);
+    f.strength = 1;
+    f.defence = skills.Level(Skill::Defence);
+    return f;
+}
+
 namespace {
 // "Effective level" = the level plus a fixed bonus. Creatures defend and hit like the classic +9, but their strikes are
 // a little clumsy (+4 instead of +8 when aiming), which keeps the first fights gentle.
@@ -62,14 +88,14 @@ int EffectiveStrength(const Fighter& f) {
 
 int MaxHit(const Fighter& a) {
     const double eff = EffectiveStrength(a);
-    return static_cast<int>(std::floor(0.5 + eff * (a.strengthBonus + 64) / 640.0));
+    return static_cast<int>(std::floor(0.5 + eff * (a.strengthBonus + 64) / 640.0 * a.swingScale));
 }
 
 double HitChance(const Fighter& a, const Fighter& d) {
     const double attackRoll = EffectiveAim(a) * (a.attackBonus + 64.0);
     const double defenceRoll = EffectiveDefence(d) * (d.defenceBonus + 64.0);
-    if (attackRoll > defenceRoll) return 1.0 - (defenceRoll + 2.0) / (2.0 * (attackRoll + 1.0));
-    return attackRoll / (2.0 * (defenceRoll + 1.0));
+    const double p = attackRoll > defenceRoll ? 1.0 - (defenceRoll + 2.0) / (2.0 * (attackRoll + 1.0)) : attackRoll / (2.0 * (defenceRoll + 1.0));
+    return std::clamp(p, 0.05, 0.95);   // (the design document: never less than 5%, never more than 95%)
 }
 
 AttackResult RollAttack(const Fighter& a, const Fighter& d, const std::function<double()>& roll) {
@@ -80,6 +106,37 @@ AttackResult RollAttack(const Fighter& a, const Fighter& d, const std::function<
         r.damage = std::clamp(1 + static_cast<int>(roll() * mx), 1, mx);
     }
     return r;
+}
+
+AttackResult RollSpell(const Fighter& a, int maxHit, const Fighter& d, const std::function<double()>& roll) {
+    AttackResult r;
+    r.landed = roll() < HitChance(a, d);
+    if (r.landed) {
+        const int mx = std::max(1, maxHit);
+        r.damage = std::clamp(1 + static_cast<int>(roll() * mx), 1, mx);
+    }
+    return r;
+}
+
+CombatXp XpForRangedDamage(CombatStyle style, int damage) {
+    CombatXp x;
+    if (damage <= 0) return x;
+    x.hitpoints = static_cast<int>(std::lround(damage * 4.0 / 3.0));
+    if (style == CombatStyle::Defensive) {
+        x.ranged = damage * 2;
+        x.defence = damage * 2;
+    } else {
+        x.ranged = damage * 4;
+    }
+    return x;
+}
+
+CombatXp XpForSpellDamage(int damage) {
+    CombatXp x;
+    if (damage <= 0) return x;
+    x.hitpoints = static_cast<int>(std::lround(damage * 4.0 / 3.0));
+    x.magic = damage * 2;
+    return x;
 }
 
 CombatXp XpForDamage(CombatStyle style, int damage) {

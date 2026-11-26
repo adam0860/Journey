@@ -28,13 +28,19 @@ PAL = {
     'gold': '#e6b73a', 'gold_light': '#ffd966', 'gold_dark': '#a8801f', 'crust': '#b9803f', 'crust_light': '#d49c52', 'crust_dark': '#8a5a2a',
     'bronze': '#b8733a', 'bronze_light': '#e2a869', 'iron_bar': '#7e828c', 'iron_bar_light': '#a9aeb9',
     'steel_bar': '#b4bcc8', 'steel_bar_light': '#e4eaf3', 'mithril_bar': '#4a6fd8', 'mithril_bar_light': '#93b4ff',
+    'clay': '#a8805f', 'clay_light': '#c9a07c', 'silverrock': '#c9cfdb', 'silver_light': '#f1f4fa', 'silver_bar': '#cfd5e0', 'silver_bar_light': '#f4f7fb',
+    'gold_bar': '#e6b73a', 'gold_bar_light': '#ffe27a', 'sapphire': '#3b66e8', 'sapphire_light': '#92b0ff', 'emerald': '#27b862', 'emerald_light': '#8af0b4',
+    'ruby': '#e02a42', 'ruby_light': '#ff8e9a',
+    'adamant': '#2f8a55', 'adamant_light': '#93efb5', 'adamant_bar': '#3f9a62', 'adamant_bar_light': '#8fe6ae',
 }
 ORE = {  # kind -> (ore colour, highlight colour)
     'copper': ('copper', 'copper_light'), 'tin': ('tin', 'tin_light'), 'iron': ('rust', 'rust_light'),
-    'coal': ('coalrock', 'coalrock_light'), 'mithril': ('mithril', 'mithril_light'),
+    'coal': ('coalrock', 'coalrock_light'), 'mithril': ('mithril', 'mithril_light'), 'adamant': ('adamant', 'adamant_light'),
+    'clay': ('clay', 'clay_light'), 'silver': ('silverrock', 'silver_light'), 'gold': ('gold', 'gold_light'),
+    'gems': ('sapphire', 'sapphire_light'),
 }
 BAR = {'bronze': ('bronze', 'bronze_light'), 'iron': ('iron_bar', 'iron_bar_light'), 'steel': ('steel_bar', 'steel_bar_light'),
-       'mithril': ('mithril_bar', 'mithril_bar_light')}
+       'mithril': ('mithril_bar', 'mithril_bar_light'), 'adamant': ('adamant_bar', 'adamant_bar_light'), 'silver': ('silver_bar', 'silver_bar_light'), 'gold': ('gold_bar', 'gold_bar_light')}
 
 
 def Model(name, origin=(0.0, 0.0, 0.0)):
@@ -88,8 +94,11 @@ def build_rock(kind, seed):
     for i in range(7):
         n = unit(rnd)
         p = (cx + rx * n[0] * 0.93, cy + ry * n[1] * 0.93, cz + rz * n[2] * 0.93)
-        if kind == 'mithril':
+        if kind in ('mithril', 'adamant'):
             crystal(m, p, n, 0.055 + 0.02 * (i % 2), 0.15 + 0.07 * (i % 3) / 2.0, c0 if i % 2 else c1, c1)
+        elif kind == 'gems':   # crystals of three colours growing out of the stone
+            gm = [('sapphire', 'sapphire_light'), ('emerald', 'emerald_light'), ('ruby', 'ruby_light')][i % 3]
+            crystal(m, p, n, 0.055 + 0.02 * (i % 2), 0.13 + 0.06 * (i % 3) / 2.0, gm[0], gm[1])
         else:
             r = 0.075 + 0.025 * (i % 3)
             m.ellipsoid(p, (r, r * 0.85, r), c0 if i % 2 else c1, rot=(rnd.uniform(0, 1), rnd.uniform(0, 3), 0), rows=3, cols=6,
@@ -172,7 +181,7 @@ def build_ore_drop(kind, seed):
     for i in range(4):
         n = unit(rnd)
         p = (0.13 * n[0] * 0.9, 0.07 + 0.085 * n[1] * 0.9, 0.11 * n[2] * 0.9)
-        if kind == 'mithril':
+        if kind in ('mithril', 'adamant'):
             crystal(m, p, n, 0.03, 0.09, c0 if i % 2 else c1, c1)
         else:
             m.ellipsoid(p, (0.04, 0.034, 0.04), c0 if i % 2 else c1, rows=3, cols=6)
@@ -244,7 +253,8 @@ if __name__ == '__main__':
     bpy.ops.wm.read_factory_settings(use_empty=True)
     for i, k in enumerate(ORE):
         build_rock(k, 100 + i * 7)
-        build_ore_drop(k, 300 + i)
+        if k != 'gems':
+            build_ore_drop(k, 300 + i)
     build_rock_empty()
     build_furnace()
     build_anvil()

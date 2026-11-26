@@ -11,6 +11,9 @@ namespace journey {
 constexpr float kSmeltSeconds = 2.4f;
 constexpr float kSmithSeconds = 3.0f;
 
+// The furnace makes the five metal bars and, from the rarer ores, silver and gold (the last two are not a Tier: index 5 and 6).
+constexpr int kSmeltCount = 7;
+
 struct SmeltRecipe {
     Tier tier;
     Item bar;
@@ -32,6 +35,7 @@ struct SmithRecipe {
     int bars;
     int level;
     int xp;
+    int yield = 1;   // how many come out of one make (arrows: fifteen)
 };
 SmithRecipe GetSmithRecipe(Tier t, GearType g);
 

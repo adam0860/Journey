@@ -22,5 +22,7 @@ const Recipe* RecipeFor(Item raw);
 // The recipe that produced this cooked item, or nullptr.
 const Recipe* RecipeForCooked(Item cooked);
 float BurnChance(const Recipe& r, int cookingLevel);
+// A cooking range counts as this many Cooking levels higher when working out whether the food burns.
+constexpr int kRangeLevelBonus = 8;
 
 }  // namespace journey

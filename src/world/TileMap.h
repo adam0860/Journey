@@ -96,6 +96,11 @@ public:
     bool Walkable(int x, int z) const;
     bool Walkable(TileCoord t) const { return Walkable(t.x, t.z); }
 
+    // Arrows and spells fly over low things: open ground, doors, water and fences ('f') let them through, walls, trees and
+    // tall props stop them. ProjectileClear checks every tile on the straight line between two tiles (not the two ends).
+    bool ShotPasses(int x, int z) const;
+    bool ProjectileClear(TileCoord from, TileCoord to) const;
+
     // Things that appear while playing (a campfire) block their tile on top of the map's own blocking.
     void SetBlocked(TileCoord t, bool blocked);
     bool IsBlocked(TileCoord t) const;

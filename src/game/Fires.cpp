@@ -29,13 +29,15 @@ bool Fires::CanLight(const TileMap& map, TileCoord t) const {
     return BurningAt(t) == nullptr;
 }
 
-int Fires::Light(TileMap* map, TileCoord t) {
+int Fires::Light(TileMap* map, TileCoord t, bool big) {
     if (!CanLight(*map, t)) return -1;
     // Fresh fire replaces any ashes left on the tile.
     fires_.erase(std::remove_if(fires_.begin(), fires_.end(), [&](const Fire& f) { return f.tile == t; }), fires_.end());
     Fire f;
     f.id = nextId_++;
     f.tile = t;
+    f.big = big;
+    if (big) f.burnLeft = kBonfireBurnSeconds;
     fires_.push_back(f);
     map->SetBlocked(t, true);
     return f.id;

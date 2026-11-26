@@ -23,4 +23,16 @@ ChopEvent ChopSession::Update(float dt, int level, const std::function<double()>
     return ChopEvent::Swing;
 }
 
+ChopEvent ChopSession::UpdateWithChance(float dt, float chance, const std::function<double()>& roll) {
+    if (!Active()) return ChopEvent::None;
+    timer_ += dt;
+    if (timer_ < kChopTickSeconds) return ChopEvent::None;
+    timer_ -= kChopTickSeconds;
+    if (roll() < chance) {
+        Stop();
+        return ChopEvent::GotLog;
+    }
+    return ChopEvent::Swing;
+}
+
 }  // namespace journey

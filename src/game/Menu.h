@@ -13,7 +13,7 @@
 namespace journey {
 
 // Something under the finger: a thing in the world (id = its index/id in its list) or nothing but ground.
-enum class TargetKind { Ground, Tree, Spot, Fire, Npc, Pile, Rock, Station, Person };
+enum class TargetKind { Ground, Tree, Spot, Fire, Npc, Pile, Rock, Station, Person, Adventurer };   // (Adventurer: another "player"; main.cpp handles those entries)
 struct Target {
     TargetKind kind = TargetKind::Ground;
     int id = -1;
@@ -39,6 +39,7 @@ enum class MenuAct {
     ExamineItem, // slot or pile item
     ItemAct,     // a bag item action: slot + itemAction
     UseOnItem,   // use `useSlot` with `slot`
+    UseHere,     // slot = the item being used, in the place he stands in (a quest step: dig, light a candle, turn a key)
     Cancel,
 };
 
@@ -61,10 +62,10 @@ struct MakeOption {
     bool levelOk = true;
     bool haveAll = true;   // you carry everything for at least one
     int canMake = 0;       // how many you could make from what you carry
-    int index = 0;         // Tier (smelting) or GearType (smithing)
+    int index = 0;         // Tier (smelting), GearType (smithing) or the recipe's index in AllCraftRecipes() (crafting)
 };
 struct MakeMenu {
-    enum class Kind { Smelt, Smith };
+    enum class Kind { Smelt, Smith, Craft };
     Kind kind = Kind::Smelt;
     std::string title;     // "Furnace" / "Anvil"
     int tier = 0;          // smithing: the metal being shown
@@ -86,6 +87,14 @@ struct ShopMenu {
     int coins = 0;         // what you carry
     std::vector<ShopLine> buy;
     std::vector<ShopLine> sell;
+};
+
+// A conversation, one page at a time. Pure data: Gameplay builds it, the HUD draws it. No options = "tap to continue".
+struct DialogueView {
+    bool open = false;
+    std::string speaker;                 // "Wilf"
+    std::string text;
+    std::vector<std::string> options;    // choices for this page (the player taps one)
 };
 
 struct MenuEntry {

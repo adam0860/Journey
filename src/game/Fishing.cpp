@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "game/Skilling.h"
+
 namespace journey {
 
 float CatchChance(int level) {
@@ -16,15 +18,13 @@ Item RollCatch(int level, double roll) {
 }
 
 int FishXp(Item rawFish) {
-    switch (rawFish) {
-        case Item::RawShrimps: return 10;
-        case Item::RawAnchovies: return 40;
-        default: return 0;
-    }
+    const FishDef* f = FindFish(rawFish);
+    return f ? f->xp : 0;
 }
 
 int FishLevelRequired(Item rawFish) {
-    return rawFish == Item::RawAnchovies ? kAnchovyLevel : 1;
+    const FishDef* f = FindFish(rawFish);
+    return f ? f->level : 1;
 }
 
 FishEvent FishSession::Update(float dt, int level, const std::function<double()>& roll) {

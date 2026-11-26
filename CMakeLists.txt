@@ -35,7 +35,9 @@ add_library(journey_core STATIC
   src/game/Fishing.cpp src/game/Fires.cpp src/game/Cooking.cpp src/game/Player.cpp src/game/Gameplay.cpp
   src/game/Combat.cpp src/game/Npc.cpp src/game/GroundItems.cpp
   src/game/Gear.cpp src/game/Equipment.cpp src/game/Mining.cpp src/game/Smithing.cpp
-  src/game/People.cpp src/game/Shops.cpp)
+  src/game/People.cpp src/game/Shops.cpp
+  src/game/Bank.cpp src/game/Archery.cpp src/game/Magic.cpp src/game/Loot.cpp src/game/Quests.cpp src/game/Skilling.cpp src/game/Crafting.cpp src/game/Synth.cpp src/game/Settings.cpp
+  src/game/Adventurers.cpp src/game/AdventurerFillers.cpp src/game/AdventurerBrain.cpp src/game/AdventurerWork.cpp src/game/AdventurerPvp.cpp)
 target_include_directories(journey_core PUBLIC src)
 if(MSVC)
   target_compile_options(journey_core PRIVATE /W4)
@@ -47,6 +49,7 @@ endif()
 set(JOURNEY_SOURCES
   src/main.cpp
   src/platform/PointerInput.cpp
+  src/platform/Audio.cpp
   src/render/CameraRig.cpp
   src/render/CharacterRenderer.cpp
   src/game/Appearance.cpp
@@ -55,6 +58,7 @@ set(JOURNEY_SOURCES
   src/render/TownRenderer.cpp
   src/render/PropRenderer.cpp
   src/render/AnimalRenderer.cpp
+  src/render/Effects.cpp
   src/ui/CharacterCreator.cpp
   src/ui/Hud.cpp)
 if(ANDROID)
@@ -90,4 +94,7 @@ if(JOURNEY_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING AND NOT ANDROID)
   add_executable(test_core tests/test_core.cpp)
   target_link_libraries(test_core PRIVATE journey_core)
   add_test(NAME core COMMAND test_core ${CMAKE_SOURCE_DIR}/assets/maps/town.map)
+  # a development tool: the damage per second of every weapon, for balancing (tests/balance_report.cpp)
+  add_executable(balance_report tests/balance_report.cpp)
+  target_link_libraries(balance_report PRIVATE journey_core)
 endif()

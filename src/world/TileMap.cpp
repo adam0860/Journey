@@ -1,5 +1,8 @@
 #include "world/TileMap.h"
 
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
 #include <sstream>
 
 namespace journey {
@@ -19,6 +22,22 @@ bool TileMap::Walkable(int x, int z) const {
     char c = At(x, z);
     if (c != '.' && c != 'D') return false;
     return !IsBlocked({x, z});
+}
+
+bool TileMap::ShotPasses(int x, int z) const {
+    const char c = At(x, z);
+    return c == '.' || c == 'D' || c == 'f' || c == '~';
+}
+
+bool TileMap::ProjectileClear(TileCoord from, TileCoord to) const {
+    const int dx = to.x - from.x, dz = to.z - from.z;
+    const int n = std::max(std::abs(dx), std::abs(dz));
+    for (int i = 1; i < n; ++i) {
+        const int x = from.x + static_cast<int>(std::lround(static_cast<double>(dx) * i / n));
+        const int z = from.z + static_cast<int>(std::lround(static_cast<double>(dz) * i / n));
+        if (!ShotPasses(x, z)) return false;
+    }
+    return true;
 }
 
 void TileMap::SetBlocked(TileCoord t, bool blocked) {

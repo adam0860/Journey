@@ -16,7 +16,12 @@ struct PointerFrame {
     Vector2 hoverPos{0, 0};        // where the mouse is (meaningful on desktop only)
     float rotateDegrees = 0.0f;  // camera yaw change this frame
     float zoomDelta = 0.0f;      // camera distance change this frame (positive = zoom out)
+    float wheel = 0.0f;          // mouse wheel notches this frame (already counted in zoomDelta)
+    bool dragging = false;       // a one-finger drag (or a mouse drag) is going on: dragStart is where it began, dragDelta how far it moved this frame
+    Vector2 dragStart{0, 0};
+    Vector2 dragDelta{0, 0};
 };
+constexpr float kWheelZoomUnits = 1.4f;   // distance units per mouse wheel notch
 
 class PointerInput {
 public:

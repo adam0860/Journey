@@ -17,9 +17,14 @@ import numpy as np
 from mathutils import Vector
 from mathutils.bvhtree import BVHTree
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import worldmap as WM
+
+WORLD = True     # the hand-built strip (the "core") sits in the middle of a bigger world: see worldmap.py and world_wilds.py
+
 W = 64
 HT = 64    # the castle town is the top 64 rows of the map (its random layout is unchanged)
-H = 176   # the whole map: the town, the road south, the goblin camp and Millbrook village
+H = 336   # the whole map: the town, the road south, Millbrook, the lake, the mountains, the caves, the desert and the Abyss
 CH = 16  # chunk size in tiles
 NCX = (W + CH - 1) // CH
 NCZ = (H + CH - 1) // CH
@@ -48,11 +53,16 @@ PAL = {
     'roof_red': '#a53b2c', 'roof_brown': '#704b2e', 'roof_slate': '#4d586b', 'roof_thatch': '#c9a64f',
     'roof_blue': '#375f9e', 'glass': '#6aa4cf', 'carpet': '#a31e2a', 'gold': '#e6b73a',
     'banner_blue': '#2a4aa8', 'banner_red': '#b8262f', 'iron': '#3a3c43',
-    'leaf_a': '#3f9030', 'leaf_b': '#52a63a', 'leaf_c': '#2e7b2c', 'leaf_pine': '#2a6a35',
+    'leaf_a': '#3f9030', 'leaf_b': '#52a63a', 'leaf_c': '#2e7b2c', 'leaf_pine': '#2a6a35', 'leaf_maple': '#c8602a', 'leaf_magic': '#7a52c8',
     'trunk': '#6b4527', 'flower_y': '#f5d33f', 'flower_r': '#e2473d', 'flower_w': '#f5f2ea',
     'flower_p': '#a65ec4', 'cloth_white': '#f1ece0', 'cloth_red': '#c4372f', 'cloth_green': '#3f8050',
     'glow': '#ffd37a', 'straw': '#d9bb62', 'hedge': '#2d6b2a', 'skin': '#e0b48a',
     'tuft': '#78b648', 'foam': '#d3e8ee',
+    'highland': '#7d7565', 'highland_b': '#716a5c', 'cave': '#4b453f', 'cave_b': '#423c37', 'abyss': '#3a2f48', 'abyss_b': '#31283d',
+    'obsidian': '#2a2133', 'lava': '#ff5a22', 'bone': '#e9dfc6',
+    # round 12: the biomes of the wider world
+    'snow': '#d2dce2', 'moss': '#587a45', 'mud': '#5b4a36', 'wheat': '#c9ad55', 'dry_grass': '#9a9b4c', 'red_sand': '#c98f5a',
+    'reed': '#7e9a4a', 'cactus': '#4f8f48',
 }
 
 # Style B: material -> (procedural texture, tile-units per texture repeat). Colours come from PAL (texture is tinted to match).
@@ -68,10 +78,15 @@ TEXMAP = {
     'roof_red': ('roof_tiles', 2.4), 'roof_brown': ('roof_tiles', 2.4), 'roof_blue': ('slate_tiles', 2.4),
     'roof_slate': ('slate_tiles', 2.4), 'roof_thatch': ('thatch', 2.0),
     'leaf_a': ('leaves', 2.6), 'leaf_b': ('leaves', 2.6), 'leaf_c': ('leaves', 2.6), 'leaf_pine': ('leaves', 2.6),
+    'leaf_maple': ('leaves', 2.6), 'leaf_magic': ('leaves', 2.6),
     'hedge': ('leaves', 2.6), 'trunk': ('bark', 1.4), 'carpet': ('carpet', 1.0),
+    'highland': ('dirt', 3), 'highland_b': ('dirt', 3), 'cave': ('rock', 3), 'cave_b': ('rock', 3), 'abyss': ('dirt', 3), 'abyss_b': ('dirt', 3),
+    'obsidian': ('stone_bricks', 4),
+    'snow': ('sand', 3), 'moss': ('grass', 3), 'mud': ('dirt', 3), 'wheat': ('grass', 3), 'dry_grass': ('grass', 3), 'red_sand': ('sand', 3),
 }
 GROUND_MATS = {'tuft', 'foam', 'grass_a', 'grass_b', 'grass_c', 'grass_dark', 'dirt', 'sand', 'cobble_a', 'cobble_b',
-               'plaza_a', 'plaza_b', 'water', 'water_b', 'water_c', 'water_deep', 'floor_a', 'floor_b', 'wood_floor'}
+               'plaza_a', 'plaza_b', 'water', 'water_b', 'water_c', 'water_deep', 'floor_a', 'floor_b', 'wood_floor',
+               'highland', 'highland_b', 'cave', 'cave_b', 'abyss', 'abyss_b', 'snow', 'moss', 'mud', 'wheat', 'dry_grass', 'red_sand'}
 
 
 def s2l(c):
@@ -492,8 +507,31 @@ class Town:
 
     def tree_geom(s, x, z, kind, sc, rot, lod):
         r = s.vrng
+        if kind == 'teak':       # a tall, straight tree
+            return s.tree_geom(x, z, 'tall', sc * 1.25, rot, lod)
+        if kind == 'mahogany':   # a vast, broad tree
+            return s.tree_geom(x, z, 'round', sc * 1.5, rot, lod)
         if B:
             return s.tree_b(x, z, kind, sc, rot, lod)
+        if kind == 'oak':      # a broad, old oak: a bigger round tree
+            return s.tree_geom(x, z, 'round', sc * 1.3, rot, lod)
+        if kind == 'maple':    # a round tree in flame colours
+            s.cyl(x, z, 0.26 * sc, 0.17 * sc, 0, 1.5 * sc, 6, 'trunk')
+            s.blob(x, z, 2.25 * sc, 1.35 * sc, 1.35 * sc, 1.05 * sc, 'leaf_maple')
+            s.blob(x + r.uniform(-.5, .5) * sc, z + r.uniform(-.5, .5) * sc, 2.9 * sc, 0.85 * sc, 0.85 * sc, 0.7 * sc, 'leaf_maple')
+            return
+        if kind in ('yew', 'magic'):      # a dark, dense conifer (the magic tree's leaves are violet)
+            s.cyl(x, z, 0.30 * sc, 0.2 * sc, 0, 1.6 * sc, 6, 'trunk')
+            for i, (rr, hh) in enumerate(((1.3, 1.1), (1.0, 2.0), (0.7, 2.8))):
+                s.cyl(x, z, rr * sc, 0.0, hh * sc, (hh + 1.3) * sc, 7, 'leaf_magic' if kind == 'magic' else 'hedge', rot=r.uniform(0, 1))
+            return
+        if kind == 'willow':   # a drooping tree: a round crown with hanging strands
+            s.cyl(x, z, 0.26 * sc, 0.17 * sc, 0, 1.5 * sc, 6, 'trunk')
+            s.blob(x, z, 2.1 * sc, 1.25 * sc, 1.25 * sc, 0.95 * sc, 'leaf_b')
+            for k in range(8):
+                a = k * 0.785
+                s.cyl(x + math.cos(a) * 1.05 * sc, z + math.sin(a) * 1.05 * sc, 0.08 * sc, 0.03 * sc, 0.5 * sc, 2.0 * sc, 4, 'leaf_c')
+            return
         s.cyl(x, z, 0.26 * sc, 0.17 * sc, 0, 1.5 * sc, 6, 'trunk')
         if kind == 'pine':
             for i, (rr, hh) in enumerate(((1.35, 1.2), (1.05, 2.1), (0.72, 2.95))):
@@ -531,6 +569,34 @@ class Town:
     def tree_b(s, x, z, kind, sc, rot, lod):
         r = s.vrng
         sub = 1 if lod else 2
+        if kind == 'oak':      # a broad, old oak: a bigger round tree
+            return s.tree_b(x, z, 'round', sc * 1.3, rot, lod)
+        if kind in ('yew', 'magic'):      # a dark, dense conifer (the magic tree's leaves are violet)
+            top = 2.4 * sc
+            s.trunk_b(x, z, sc * 1.15, top, n=7)
+            tiers = 4 if lod else 6
+            tmat = 'leaf_magic' if kind == 'magic' else 'hedge'
+            for i in range(tiers):
+                t = i / (tiers - 1)
+                rr = (1.45 - 0.95 * t) * sc
+                h0 = (0.9 + 2.7 * t * 0.85) * sc
+                hh = (1.0 - 0.25 * t) * sc
+                sides = 7 if lod else 10
+                s.cyl(x, z, rr, rr * 0.25, h0, h0 + hh * 0.55, sides, tmat, rot=rot + i * 0.7)
+                s.cyl(x, z, rr * 0.25, 0.0, h0 + hh * 0.55, h0 + hh * 1.45, sides, tmat, rot=rot + i * 0.7)
+            return
+        if kind == 'willow':   # a drooping tree: a round crown with long hanging strands
+            top = 1.7 * sc
+            s.trunk_b(x, z, sc, top)
+            base = 2.2 * sc
+            s.blob(x, z, base, 1.3 * sc, 1.3 * sc, 0.95 * sc, 'leaf_b', jitter=0.12, sub=sub, shade=(base - 1.0 * sc, base + 1.8 * sc))
+            for k in range(5 if lod else 8):
+                a = rot + k * (2 * math.pi / (5 if lod else 8))
+                s.blob(x + math.cos(a) * 0.9 * sc, z + math.sin(a) * 0.9 * sc, base - 0.1 * sc, 0.55 * sc, 0.55 * sc, 0.5 * sc, 'leaf_c', jitter=0.1, sub=1)
+                for m in range(2 if lod else 3):
+                    b = a + (m - 1) * 0.28
+                    s.cyl(x + math.cos(b) * 1.3 * sc, z + math.sin(b) * 1.3 * sc, 0.07 * sc, 0.025 * sc, 0.35 * sc, base - 0.1 * sc, 4, 'leaf_c')
+            return
         if kind == 'pine':
             top = 2.2 * sc
             s.trunk_b(x, z, sc, top, n=7)
@@ -568,9 +634,10 @@ class Town:
         for k in range(3):
             a = rot + k * 2.09
             s.branch_b(cx, cz, top - 0.1 * sc, cx + math.cos(a) * 0.75 * sc, cz + math.sin(a) * 0.75 * sc, base - 0.2 * sc, 0.13 * sc)
-        mats = ['leaf_a', 'leaf_b', 'leaf_c']
+        leaf = ('leaf_maple', 'leaf_maple', 'leaf_maple') if kind == 'maple' else ('leaf_a', 'leaf_b', 'leaf_c')   # the maple burns orange
+        mats = list(leaf)
         shade = (base - 1.1 * sc, base + 1.9 * sc)
-        s.blob(cx, cz, base + 0.15 * sc, 1.25 * sc, 1.25 * sc, 0.95 * sc, 'leaf_a', jitter=0.14, sub=sub, shade=shade)
+        s.blob(cx, cz, base + 0.15 * sc, 1.25 * sc, 1.25 * sc, 0.95 * sc, leaf[0], jitter=0.14, sub=sub, shade=shade)
         n_ring = 4 if lod else 6
         for k in range(n_ring):
             a = rot + k * (2 * math.pi / n_ring) + r.uniform(-.25, .25)
@@ -583,7 +650,7 @@ class Town:
             d = r.uniform(0.1, 0.55) * sc
             rad = r.uniform(0.55, 0.78) * sc
             s.blob(cx + math.cos(a) * d, cz + math.sin(a) * d, base + r.uniform(0.75, 1.2) * sc, rad, rad, rad * 0.8,
-                   r.choice(['leaf_b', 'leaf_a']), jitter=0.1, sub=sub, shade=shade)
+                   r.choice([leaf[1], leaf[0]]), jitter=0.1, sub=sub, shade=shade)
 
     def bush(s, x, z, flowers=False):
         r = s.vrng
@@ -746,6 +813,16 @@ class Town:
     SUN = Vector((-0.46, -0.49, 0.74)).normalized()     # sun direction in Blender coords (x, -z, up)
     SHADOW_STRENGTH = 0.52
 
+    shadow_rects = None   # None = everywhere; otherwise only inside these rects (x0, z0, x1, z1): the wilds have no buildings to cast shadows
+
+    def want_shadow(s, gx, gz):
+        if s.shadow_rects is None:
+            return True
+        for r in s.shadow_rects:
+            if r[0] <= gx < r[2] and r[1] <= gz < r[3]:
+                return True
+        return False
+
     def build_shadow_bvh(s):
         """Occluders = everything except ground, water, tufts, foam and the (hideable) roofs of enterable buildings."""
         skip = GROUND_MATS | {'carpet'} | {m for m in PAL if m.startswith('water')}
@@ -803,14 +880,14 @@ class Town:
                     k = 1.0
                     if B and mname != 'tuft' and mname != 'carpet' and not wet:
                         gx, gz = l.vert.co.x, -l.vert.co.y
-                        if mname.startswith('grass') or mname in ('dirt', 'sand'):
+                        if mname.startswith('grass') or mname in ('dirt', 'sand', 'snow', 'moss', 'mud', 'wheat', 'dry_grass', 'red_sand', 'highland', 'highland_b'):
                             v = (math.sin(gx * 0.31) + math.sin(gz * 0.27 + 1.3) + math.sin((gx + gz) * 0.13 + 0.6)) / 3.0
                             k *= 0.90 + 0.10 * v + 0.0
                         if z > -0.2:
                             k *= s.corner_ao(gx, gz)
-                    if B and s.bvh is not None and z > -0.2 and not wet:
+                    if B and s.bvh is not None and z > -0.2 and not wet and s.want_shadow(l.vert.co.x, -l.vert.co.y):
                         k *= s.shadow_k(l.vert.co.x, l.vert.co.y)
-                elif B and mname == 'leaf_pine':
+                elif B and mname in ('leaf_pine', 'leaf_magic'):
                     t = max(0.0, min(1.0, z / 4.4))
                     k = 0.58 + 0.42 * t
                 else:
@@ -850,7 +927,10 @@ def build():
 
     # ---- terrain definition --------------------------------------------------------------------
     def wx(z):  # river edge: water where x < wx
-        return 5 + int(round(1.5 * math.sin(z / 6.0)))
+        base = 5 + int(round(1.5 * math.sin(z / 6.0)))
+        if 180 <= z <= 214:   # south of Millbrook the river swells into a lake
+            base += int(round(15 * math.sin(math.pi * (z - 180) / 34.0)))
+        return base
 
     CASTLE = (18, 3, 47, 25)    # curtain wall ring (x 18..46, z 3..24)
     KEEP = (24, 6, 41, 16)      # throne hall (x 24..40, z 6..15)
@@ -870,8 +950,24 @@ def build():
     T.floor((19, 4, 24, 24), 'floor_a', 'floor_b')                     # west training yard
     T.floor((24, 6, 41, 16), 'floor_a', 'floor_b')                     # keep interior
     T.floor((31, 8, 34, 16), 'carpet')                                 # red carpet
-    T.floor((42, 31, 50, 38), 'floor_a', 'floor_b')                    # bank interior
     T.floor((42, 44, 52, 52), 'wood_floor', 'wood_floor')              # inn interior
+    T.floor((42, 31, 50, 38), 'floor_a', 'floor_b')                    # bank interior (floors must be laid before the ground is built)
+    T.floor((48, 132, 56, 139), 'floor_a', 'floor_b')                  # Millbrook bank
+    T.floor((9, 53, 23, 63), 'floor_a', 'floor_b')                     # the crypt under the castle's graveyard
+    T.floor((47, 99, 62, 110), 'cobble_a', 'cobble_b')                 # the crafters' yard in Millbrook
+    def road2(z):                                                      # the road south of Millbrook (straight again from the caves on)
+        return 32 if z >= 236 else 32 + int(round(3 * math.sin((z - 176) / 9.0)))
+    T.floor((0, 216, 64, 241), 'highland', 'highland_b')                # the troll mountains
+    T.floor((0, 241, 64, 272), 'cave', 'cave_b')                       # the mining caves
+    T.floor((0, 272, 64, 304), 'sand', 'sand')                         # the desert
+    T.floor((44, 290, 62, 304), 'floor_a', 'floor_b')                  # the dragon's temple floor
+    T.floor((0, 304, 64, 336), 'abyss', 'abyss_b')                     # the Abyss
+    T.floor((4, 219, 20, 234), 'dirt', 'dirt')                         # the highland quarry
+    for z in range(176, 336):                                          # the road runs over the top of all of them
+        if z < 304:
+            T.floor((road2(z) - 1, z, road2(z) + 3, z + 1), 'dirt', 'dirt')
+        else:
+            T.floor((29, z, 36, z + 1), 'abyss', 'abyss_b')
     COOP = (9, 8, 17, 20)       # chicken coop: fence ring x 9..16, z 8..19 (interior x 10..15, z 9..18), gate on the south side
     PEN = (50, 6, 62, 20)       # cow pen: fence ring x 50..61, z 6..19 (interior x 51..60, z 7..18), gate on the south side
     T.floor((10, 9, 16, 19), 'dirt', 'dirt')                           # the chickens' yard is bare earth
@@ -902,6 +998,15 @@ def build():
     T.floor(V_FARM, 'dirt', 'dirt')
     T.floor((34, 102, 36, 105), 'cobble_a', 'cobble_b')              # the inn's doorstep
 
+    def detail_n(x, z):   # (core coordinates) quads per tile side: the castle town and Millbrook keep 4, the road between and Lakeside 2, the wild south 1
+        if z < 70 or 92 <= z < 180:
+            return 4
+        if z < 216:
+            return 2
+        if 44 <= x < 62 and 288 <= z < 304:
+            return 2
+        return 1
+
     # grass colour noise
     def tile_mat(x, z):
         m = None
@@ -911,6 +1016,9 @@ def build():
         if m in ('grass_a', 'grass_b'):
             n = (x * 73856093 ^ z * 19349663) & 7
             m = ('grass_a', 'grass_b', 'grass_c', 'grass_a', 'grass_b', 'grass_a', 'grass_c', 'grass_dark')[n]
+        if WORLD and m:
+            m = WM.core_seam_material(m, x, z)
+            m = WM.core_edge_material(m, x, z)
         if B and m:   # textured ground: one material per surface type, variation comes from vertex colour
             if m.startswith('grass'):
                 m = 'grass_a'
@@ -945,8 +1053,8 @@ def build():
                                'cliff' if (x + z) % 3 else 'cliff_dark', (x + .5, z + .5))
             else:
                 gm = tile_mat(x, z)
-                if B:   # 4x4 sub-quads so baked sun shadows have 1/4-tile resolution
-                    n = 4
+                if B:   # sub-quads so baked sun shadows have finer resolution where there are buildings; the wilds get one quad a tile
+                    n = detail_n(x, z)
                     for i in range(n):
                         for j in range(n):
                             xa, xb, za, zb = x + i / n, x + (i + 1) / n, z + j / n, z + (j + 1) / n
@@ -1237,44 +1345,40 @@ def build():
         T.obox((18.3 + k * 0.6, 52.2, 0.2), (18.3 + k * 0.6, 52.2, 1.5), 0.08, 0.08, 'iron')
     T.sign(23.6, 45.6)
 
-    # Bank (enterable, stone, columns)
-    BANK = (42, 31, 50, 38)
-    T.walls(BANK, 3.2, 'stone_light', 0.6, doors=[('W', 34, 36)], door_h=2.7)
-    T.plinth_ring(BANK, 0.5)
-    for a in (32.0, 37.0):
-        T.side_box('N', BANK, 44.0, 45.0, 1.2, 2.4, 0.1, 'timber') if a == 32 else None
-    for a in (33.0, 36.5):
-        pass
-    # windows (stone arch style)
-    for side, aa in (('N', 44.5), ('N', 47.0), ('S', 44.5), ('S', 47.0), ('E', 33.5), ('E', 36.0)):
-        T.window(side, BANK, aa, 1.2, 2.2, 0.8, shutters=False)
-    # portico: two columns + small pediment over door
-    for cz in (33.2, 36.8):
-        T.cyl(41.0, cz, 0.28, 0.28, 0, 3.0, 8, 'stone_light')
-        T.cyl(41.0, cz, 0.38, 0.38, 0, 0.25, 8, 'stone_dark'); T.cyl(41.0, cz, 0.38, 0.38, 2.9, 3.15, 8, 'stone_dark')
-        T.mark(40.7, cz - 0.3, 41.3, cz + 0.3, 'o')
-    T.box(40.6, 32.8, 42.0, 37.2, 3.15, 3.45, 'stone')
-    T.tri_prism('x', 40.6, 42.0, 32.8, 37.2, 3.45, 4.3, 'stone_light')
-    T.cyl(41.3, 35.0, 0.4, 0.4, 3.6, 3.66, 12, 'gold', sx=0.15, sz=1.0)
-    # roof (hip-ish gable, red) separate so it hides when inside
-    T.target = 'roof_bank'
-    T.gable_roof(42, 31, 50, 38, 3.2, 2.0, 0.7, 'roof_red', axis='z', gable_mat='stone_light', trim='stone_dark')
-    T.target = None
-    T.roof_rects['bank'] = BANK
-    # interior: counter + booths + chests
-    T.box(46.3, 32.2, 47.0, 36.8, 0, 1.05, 'wood_dark'); T.box(46.2, 32.1, 47.2, 36.9, 1.05, 1.15, 'wood')
-    for z in (33.4, 35.0, 36.6):
-        pass
-    for bz in (32.6, 34.2, 35.8):
-        T.box(46.5, bz, 46.7, bz + 0.08, 1.15, 2.3, 'glass')
-        T.box(46.5, bz + 0.0, 46.6, bz + 0.1, 1.15, 2.4, 'timber')
-    T.mark(46, 32, 47.5, 37, 'o')
-    for cz in (32.4, 36.0):
-        T.box(43.2, cz, 44.2, cz + 0.8, 0, 0.7, 'wood_dark'); T.box(43.15, cz - 0.05, 44.25, cz + 0.85, 0.7, 0.82, 'wood')
-        T.box(43.55, cz + 0.28, 43.85, cz + 0.45, 0.8, 0.9, 'gold'); T.mark(43.15, cz - 0.05, 44.25, cz + 0.85, 'o')
-    T.floor((42, 34, 44, 36), 'carpet')
-    T.box(48.4, 31.9, 48.8, 32.4, 0, 1.5, 'iron'); T.mark(48.3, 31.9, 49, 32.5, 'o')
-    # bank sign above door
+    # Bank (enterable, stone, columns). A function: there is a second bank in Millbrook (offset by ox, oz).
+    def bank_at(ox, oz, key):
+        BANK = (42 + ox, 31 + oz, 50 + ox, 38 + oz)
+        T.walls(BANK, 3.2, 'stone_light', 0.6, doors=[('W', 34 + oz, 36 + oz)], door_h=2.7)
+        T.plinth_ring(BANK, 0.5)
+        T.side_box('N', BANK, 44.0 + ox, 45.0 + ox, 1.2, 2.4, 0.1, 'timber')
+        # windows (stone arch style)
+        for side, aa in (('N', 44.5 + ox), ('N', 47.0 + ox), ('S', 44.5 + ox), ('S', 47.0 + ox), ('E', 33.5 + oz), ('E', 36.0 + oz)):
+            T.window(side, BANK, aa, 1.2, 2.2, 0.8, shutters=False)
+        # portico: two columns + small pediment over door
+        for cz in (33.2 + oz, 36.8 + oz):
+            T.cyl(41.0 + ox, cz, 0.28, 0.28, 0, 3.0, 8, 'stone_light')
+            T.cyl(41.0 + ox, cz, 0.38, 0.38, 0, 0.25, 8, 'stone_dark'); T.cyl(41.0 + ox, cz, 0.38, 0.38, 2.9, 3.15, 8, 'stone_dark')
+            T.mark(40.7 + ox, cz - 0.3, 41.3 + ox, cz + 0.3, 'o')
+        T.box(40.6 + ox, 32.8 + oz, 42.0 + ox, 37.2 + oz, 3.15, 3.45, 'stone')
+        T.tri_prism('x', 40.6 + ox, 42.0 + ox, 32.8 + oz, 37.2 + oz, 3.45, 4.3, 'stone_light')
+        T.cyl(41.3 + ox, 35.0 + oz, 0.4, 0.4, 3.6, 3.66, 12, 'gold', sx=0.15, sz=1.0)
+        # roof (hip-ish gable, red) separate so it hides when inside
+        T.target = 'roof_' + key
+        T.gable_roof(42 + ox, 31 + oz, 50 + ox, 38 + oz, 3.2, 2.0, 0.7, 'roof_red', axis='z', gable_mat='stone_light', trim='stone_dark')
+        T.target = None
+        T.roof_rects[key] = BANK
+        # interior: a long counter with glass, the bankers stand behind it (east side); chests along the west wall
+        T.box(46.3 + ox, 32.2 + oz, 47.0 + ox, 36.8 + oz, 0, 1.05, 'wood_dark'); T.box(46.2 + ox, 32.1 + oz, 47.2 + ox, 36.9 + oz, 1.05, 1.15, 'wood')
+        for bz in (32.6 + oz, 34.2 + oz, 35.8 + oz):
+            T.box(46.5 + ox, bz, 46.7 + ox, bz + 0.08, 1.15, 2.3, 'glass')
+            T.box(46.5 + ox, bz + 0.0, 46.6 + ox, bz + 0.1, 1.15, 2.4, 'timber')
+        T.mark(46 + ox, 32 + oz, 47.5 + ox, 37 + oz, 'o')
+        for cz in (32.4 + oz, 36.0 + oz):
+            T.box(43.2 + ox, cz, 44.2 + ox, cz + 0.8, 0, 0.7, 'wood_dark'); T.box(43.15 + ox, cz - 0.05, 44.25 + ox, cz + 0.85, 0.7, 0.82, 'wood')
+            T.box(43.55 + ox, cz + 0.28, 43.85 + ox, cz + 0.45, 0.8, 0.9, 'gold'); T.mark(43.15 + ox, cz - 0.05, 44.25 + ox, cz + 0.85, 'o')
+        T.floor((42 + ox, 34 + oz, 44 + ox, 36 + oz), 'carpet')
+        T.box(48.4 + ox, 31.9 + oz, 48.8 + ox, 32.4 + oz, 0, 1.5, 'iron'); T.mark(48.3 + ox, 31.9 + oz, 49 + ox, 32.5 + oz, 'o')
+    bank_at(0, 0, 'bank')
 
     # Inn (enterable, wood floor)
     INN = (42, 44, 52, 52)
@@ -1345,8 +1449,8 @@ def build():
                 T.box(x - 0.05, z0 - 0.05, x + 0.05, z0 + 0.05, 0, 0.9, 'wood')
             T.obox((x0, z0, 0.7), (x1, z1, 0.7), 0.06, 0.1, 'wood_dark')
             T.obox((x0, z0, 0.35), (x1, z1, 0.35), 0.06, 0.1, 'wood_dark')
-    fence(11, 38.6, 16, 38.6); T.mark(11, 38.4, 16, 38.9, 'o')
-    fence(55, 38.6, 60, 38.6); T.mark(55, 38.4, 60, 38.9, 'o')
+    fence(11, 38.6, 16, 38.6); T.mark(11, 38.4, 16, 38.9, 'f')
+    fence(55, 38.6, 60, 38.6); T.mark(55, 38.4, 60, 38.9, 'f')
     for (fx, fz) in ((12.5, 38.0), (14.5, 38.0), (56.5, 38.0), (58.5, 38.0)):
         T.flower_patch(fx, fz, 6, 0.5)
 
@@ -1361,10 +1465,10 @@ def build():
                 return
             if axis == 'x':
                 fence(a + 0.5, fixed + 0.5, b + 0.5, fixed + 0.5)
-                T.mark(a, fixed, b + 1, fixed + 1, 'o')
+                T.mark(a, fixed, b + 1, fixed + 1, 'f')
             else:
                 fence(fixed + 0.5, a + 0.5, fixed + 0.5, b + 0.5)
-                T.mark(fixed, a, fixed + 1, b + 1, 'o')
+                T.mark(fixed, a, fixed + 1, b + 1, 'f')
         for sd, fixed, a, b, axis in (('N', z0, x0, x1, 'x'), ('S', z1, x0, x1, 'x'), ('W', x0, z0, z1, 'z'), ('E', x1, z0, z1, 'z')):
             if sd == side:
                 run(a, g0 - 1, fixed, axis)
@@ -1543,6 +1647,8 @@ def build():
     person('aubrey', 36.5, 36.5, 0.0)
     person('guard_gate', 34.5, 26.5, 270.0)
     person('torvald', 59.5, 54.5, 90.0)
+    person('oswin', 47.6, 33.5, 270.0)       # the bankers stand behind the bank counter
+    person('ysolde', 47.6, 35.5, 270.0)
 
     # ---- the road south: signs and boulders
     RESERVED.append((GOBCAMP[0] - 1, GOBCAMP[1] - 1, GOBCAMP[2] + 1, GOBCAMP[3] + 1))
@@ -1616,6 +1722,7 @@ def build():
     taken = []
     populate('goblin', 'goblincamp', 6, camp_tiles, taken)
     populate('goblin_warrior', 'goblincamp', 2, camp_tiles, taken)
+    populate('hobgoblin', 'goblincamp', 2, camp_tiles, taken)
 
     # ---- Millbrook: the gate, the main street, houses, the windmill, the square with its shops
     for gxp in (29.4, 34.6):
@@ -1683,6 +1790,15 @@ def build():
     person('hilda', 41.2, 129.5, 0.0)
     person('marta', 22.8, 141.5, 0.0)
     person('gwen', 38.5, 141.5, 270.0)
+    # two more stalls in the south row: the bowyer and the wizard
+    T.stall(25.0, 141.0, 28.4, 143.0, 'wood_dark', 'cloth_white', ('straw', 'wood', 'iron'))                            # bows and arrows
+    T.stall(40.2, 141.0, 43.8, 143.0, 'cloth_blue' if 'cloth_blue' in PAL else 'banner_blue', 'cloth_white', ('glow', 'banner_blue', 'gold'))   # runes
+    person('larson', 26.7, 141.5, 0.0)
+    person('aldric', 42.0, 141.5, 0.0)
+    # Millbrook Bank, east of the square: the same building as the castle bank
+    bank_at(6, 101, 'bank2')
+    person('cedric', 53.6, 134.5, 270.0)
+    person('wren', 53.6, 136.5, 270.0)
     # lamps and a barrel here and there along the street
     for z in range(104, 176, 12):
         T.lamp(29.5, z + 0.5); T.lamp(34.6, z + 0.5)
@@ -1736,6 +1852,301 @@ def build():
     person('fisher', 6.5, 125.5, 270.0)
     T.sign(30.0, 169.5)
 
+
+    # ============================================================================================================
+    # THE CRYPT, THE CRAFTERS' YARD, AND THE FAR SOUTH: the lake, the troll mountains, the caves, the desert and the Abyss
+    # ============================================================================================================
+    NR = random.Random(31337)   # its own random stream: nothing else moves
+
+    def pillar(x, z, h=2.6, broken=False, mat='stone_light'):
+        T.cyl(x, z, 0.36, 0.32, 0, 0.30, 8, 'stone_dark')
+        T.cyl(x, z, 0.27, 0.25, 0.30, h * (0.55 if broken else 1.0), 8, mat)
+        if not broken:
+            T.cyl(x, z, 0.36, 0.36, h, h + 0.22, 8, 'stone_dark')
+        T.mark(x - 0.38, z - 0.38, x + 0.38, z + 0.38, 'o')
+
+    def rock_field(x0, z0, x1, z1, density, keep_clear=(), mat=('rock', 'rock_dark'), sc=(0.8, 1.5)):
+        for zz in range(z0, z1):
+            for xx in range(x0, x1):
+                if T.grid[zz][xx] != '.' or NR.random() > density:
+                    continue
+                if any(c[0] <= xx < c[2] and c[1] <= zz < c[3] for c in keep_clear):
+                    continue
+                T.rock(xx + NR.uniform(0.2, 0.8), zz + NR.uniform(0.2, 0.8), NR.uniform(*sc), NR.choice(mat))
+
+    def far_rock(kind, x, z):
+        T.rocks.append((x + 0.5, z + 0.5, kind, NR.uniform(0, 360)))
+        T.mark(x, z, x + 1, z + 1, 'o')
+
+    def rock_wall(x0, z0, x1, z1, h=3.2):
+        T.box(x0, z0, x1, z1, 0, h, 'rock_dark')
+        T.box(x0 - 0.05, z0 - 0.05, x1 + 0.05, z1 + 0.05, h, h + 0.25, 'rock')
+        T.mark(x0, z0, x1, z1, '#')
+
+    # ---- the crypt: a graveyard building in the south-west of the castle town, entered from the north
+    CRYPT = (9, 53, 23, 63)
+    RESERVED.append((8, 51, 24, 64))
+    T.walls(CRYPT, 3.0, 'stone_dark', 0.6, doors=[('N', 15, 17)], door_h=2.7)
+    T.plinth_ring(CRYPT, 0.4)
+    for side, aa in (('S', 12.5), ('S', 19.0), ('W', 57.5), ('E', 57.5)):
+        T.window(side, CRYPT, aa, 1.4, 2.3, 0.7, shutters=False)
+    T.target = 'roof_crypt'
+    T.gable_roof(9, 53, 23, 63, 3.0, 1.7, 0.6, 'roof_slate', axis='x', gable_mat='stone_dark', trim='stone_dark')
+    T.target = None
+    T.roof_rects['crypt'] = CRYPT
+    for zz in (55.0, 58.0):                         # stone coffins along both walls (a clear lane runs between the rows)
+        for (xa, xb) in ((10.6, 12.6), (19.4, 21.4)):
+            T.box(xa, zz, xb, zz + 2.0, 0, 0.7, 'stone')
+            T.box(xa - 0.1, zz - 0.1, xb + 0.1, zz + 2.1, 0.7, 0.86, 'stone_light')
+            T.mark(xa, zz, xb, zz + 2.0, 'o')
+    for (cx, cz) in ((14.0, 56.5), (18.0, 56.5), (14.0, 59.0), (18.0, 59.0)):   # four pillars with candles
+        pillar(cx, cz, 2.9)
+        T.cyl(cx, cz + 0.55, 0.04, 0.04, 0.0, 0.5, 5, 'cloth_white')
+        T.cyl(cx, cz + 0.55, 0.045, 0.0, 0.5, 0.66, 5, 'glow')
+    T.box(15.0, 61.4, 17.0, 62.2, 0, 0.9, 'stone')                              # an altar at the back
+    T.box(14.9, 61.3, 17.1, 62.3, 0.9, 1.0, 'stone_light')
+    T.mark(15.0, 61.4, 17.0, 62.2, 'o')
+    T.sign(13.4, 50.6)
+    T.pens.append(('crypt', 10, 54, 22, 62))
+    taken = []
+    crypt_tiles = free_tiles(10, 54, 22, 62)
+    populate('skeleton', 'crypt', 5, crypt_tiles, taken)
+    populate('zombie', 'crypt', 3, crypt_tiles, taken)
+    populate('skeleton_warrior', 'crypt', 2, crypt_tiles, taken)
+    populate('imp', 'crypt', 3, crypt_tiles, taken)
+    populate('dark_wizard', 'crypt', 2, crypt_tiles, taken)
+    person('king', 32.5, 7.5, 0.0)                                              # the king, in the throne hall
+    person('barnaby', 6.5, 36.5, 270.0)                                         # the ferryman at the pier
+
+    # ---- Millbrook's crafters' yard: a tanning rack, a potter's wheel, a jeweller's bench and Ellis's shop
+    for (kind, sx, sz) in (('tanner', 50.5, 106.5), ('wheel', 54.5, 106.5), ('jeweller', 58.5, 106.5)):
+        T.stations.append((kind, sx, sz, 0.0))
+        T.mark(int(sx), int(sz), int(sx) + 1, int(sz) + 1, 'o')
+    T.stall(47.6, 99.4, 51.2, 101.4, 'cloth_blue' if 'cloth_blue' in PAL else 'banner_blue', 'cloth_white', ('leaf_b', 'leaf_a', 'flower_y'))
+    person('ellis', 49.4, 99.9, 0.0)
+    T.stations.append(('range', 55.5, 101.5, 0.0)); T.mark(55, 101, 56, 102, 'o')       # cooking ranges: here, by the castle inn and at Lakeside
+    T.stations.append(('range', 49.5, 54.5, 0.0)); T.mark(49, 54, 50, 55, 'o')
+    T.stations.append(('range', 30.5, 193.5, 0.0)); T.mark(30, 193, 31, 194, 'o')
+    T.lamp(61.4, 99.6)
+    T.barrel(61.2, 103.8)
+    T.sign(47.3, 108.6)
+    RESERVED.append((46, 98, 63, 111))
+    person('priest', 19.6, 154.5, 270.0)                                        # outside the chapel
+
+    # ---- Lakeside (z 176-215): the lake in the west with a dock, a fishing hut, willows, and the wolf wood to the east
+    DZ = 196
+    for zz in (DZ, DZ + 1):
+        for xx in range(8, wx(zz) + 1):
+            T.grid[zz][xx] = '.'
+        T.box(8.0, zz, wx(zz) + 0.4, zz + 1, 0.0, 0.12, 'wood', c=(10, zz))
+    for xx in (9.5, 12.5, 15.5, 18.5):
+        for zz in (DZ - 0.05, DZ + 2.05):
+            T.box(xx - 0.1, zz - 0.1, xx + 0.1, zz + 0.1, -0.35, 0.5, 'wood_dark', c=(xx, zz))
+    for (sx, sz, kind) in ((7, DZ, 'harpoon'), (7, DZ + 1, 'cage'), (10, DZ - 1, 'rod'), (13, DZ + 2, 'rod'), (16, DZ - 1, 'net'),
+                           (10, DZ + 2, 'harpoon'), (17, DZ + 2, 'cage'), (14, DZ - 1, 'rod')):
+        assert (sx, sz) in water and T.grid[sz][sx] == '~', (sx, sz)
+        T.spots.append((sx + 0.5, sz + 0.5, kind))
+    person('silas', wx(DZ) + 2.5, DZ + 0.5, 270.0)                              # the ferryman
+    T.sign(wx(DZ) + 2.2, DZ - 1.8)
+    T.stall(wx(DZ) + 3.0, DZ + 3.6, wx(DZ) + 6.6, DZ + 5.6, 'cloth_blue' if 'cloth_blue' in PAL else 'banner_blue', 'cloth_white', ('flower_y', 'wood', 'iron'))
+    person('gerrant', wx(DZ) + 4.8, DZ + 4.1, 0.0)                              # fishing supplies
+    T.house(21, 184, 28, 191, 'S', roof='roof_blue', wall_h=2.6, rise=1.7)      # a fisher's cottage
+    T.flower_patch(25.0, 193.0, 6, 0.6)
+    for zz in range(182, 214, 3):                                               # willows at the water's edge, oaks along the road
+        T.tree(wx(zz) + 2.4, zz + 0.5, 'willow')
+    for zz in range(178, 216, 5):
+        T.tree(road2(zz) - 3.2, zz + 0.4, 'oak')
+        T.tree(road2(zz) + 6.2, zz + 0.4, 'oak')
+    fplaced = []
+    for _ in range(120):                                                        # the wolf wood: yews and oaks and the odd pine
+        xx, zz = NR.randint(40, 62), NR.randint(178, 214)
+        if T.grid[zz][xx] == '.' and not any((xx - a) ** 2 + (zz - b) ** 2 < 5 for a, b in fplaced):
+            T.tree(xx + NR.uniform(0.2, 0.8), zz + NR.uniform(0.2, 0.8), NR.choice(['yew', 'yew', 'oak', 'pine']))
+            fplaced.append((xx, zz))
+    def grove(kind, spots):
+        placed = 0
+        for (gx, gz) in spots:
+            if 0 <= gz < H and 0 <= gx < W and T.grid[gz][gx] == '.':
+                T.tree(gx + 0.5, gz + 0.5, kind)
+                placed += 1
+        print('grove', kind, placed, 'of', len(spots))
+    grove('maple', [(44, 181), (47, 185), (43, 189), (48, 193), (44, 197), (50, 199), (41, 201)])     # the edge of the wolf wood
+    grove('teak', [(30, 200), (32, 203), (29, 207), (33, 210), (31, 213), (35, 205)])                  # south of the lake, beside the clay pit
+    grove('mahogany', [(55, 204), (58, 207), (56, 211), (59, 213), (52, 209)])                         # deep in the dark wood
+    for (cx, cz) in ((24, 206), (26, 209), (23, 211), (27, 205)):               # a clay pit on the lake's south shore
+        if T.grid[cz][cx] == '.':
+            far_rock('clay', cx, cz)
+    for _ in range(18):
+        xx, zz = NR.randint(wx(200) + 3, 62), NR.randint(177, 215)
+        if T.grid[zz][xx] == '.' and all(abs(xx - road2(zz) - 1) > 3 for _ in (0,)):
+            T.flower_patch(xx + .5, zz + .5, NR.randint(4, 8), 0.7)
+    T.pens.append(('wolfwood', 42, 178, 62, 200))
+    T.pens.append(('darkwood', 46, 202, 62, 216))
+    taken = []
+    populate('wolf', 'wolfwood', 5, free_tiles(42, 178, 62, 200), taken)
+    taken = []
+    populate('dark_wolf', 'darkwood', 2, free_tiles(46, 202, 62, 216), taken)
+    populate('wolf', 'darkwood', 2, free_tiles(46, 202, 62, 216), taken)
+    taken = []
+    populate('bandit', 'wolfwood', 3, free_tiles(42, 178, 62, 200), taken)
+    T.sign(road2(178) + 4.6, 177.6)
+
+    # ---- the troll mountains (z 216-239): a rocky climb, a highland quarry and a pass full of trolls
+    rock_field(0, 216, 64, 240, 0.12, keep_clear=((road2(216) - 5, 216, road2(216) + 8, 240), (3, 218, 21, 235), (36, 217, 62, 239)))
+    rock_field(36, 217, 62, 239, 0.03)
+    for (kind, qx, qz) in (('gold', 6, 222), ('gold', 10, 224), ('gold', 14, 222), ('silver', 7, 227), ('silver', 11, 229), ('silver', 15, 227),
+                           ('gems', 9, 232), ('gems', 16, 231), ('clay', 18, 224)):
+        far_rock(kind, qx, qz)
+    T.pens.append(('trollpass', 38, 218, 60, 238))
+    taken = []
+    populate('mountain_troll', 'trollpass', 3, free_tiles(38, 218, 60, 238), taken)
+    populate('ogre', 'trollpass', 2, free_tiles(38, 218, 60, 238), taken)
+    grove('magic', [(46, 221), (49, 224), (53, 222), (57, 226), (44, 229), (55, 232)])                   # a hidden grove, guarded by the trolls
+    T.pens.append(('highland', 3, 219, 21, 235))
+    taken = []
+    populate('barbarian', 'highland', 3, free_tiles(3, 219, 21, 235), taken)
+    populate('hill_giant', 'highland', 2, free_tiles(3, 219, 21, 235), taken)
+    T.sign(road2(217) + 4.6, 217.6)
+    person('bram', 29.6, 237.6, 0.0)                                            # at the mouth of the caves
+    for xx in (28.9, 34.1):                                                     # a timber gate over the cave road
+        T.box(xx - 0.25, 239.3, xx + 0.25, 239.8, 0, 3.6, 'timber')
+        T.mark(int(xx), 239, int(xx) + 1, 240, 'o')
+    T.box(28.6, 239.25, 34.4, 239.85, 3.4, 3.8, 'wood_dark')
+
+    # ---- the mining caves (z 240-271): a walled cavern the road runs straight through, spiders and rats in both wings
+    rock_wall(0, 240, 29, 241)
+    rock_wall(35, 240, 64, 241)
+    rock_wall(0, 271, 29, 272)
+    rock_wall(35, 271, 64, 272)
+    rock_wall(0, 241, 5, 271)
+    rock_wall(59, 241, 64, 271)
+    for xx in (29.0, 34.0):                                                     # the entrance and exit are framed by rock pillars
+        for zz in (240.0, 271.0):
+            T.cyl(xx, zz + 0.5, 0.9, 0.7, 0, 4.2, 7, 'rock')
+    for (cx, cz) in ((14, 245), (20, 259), (47, 251), (52, 262), (12, 266), (44, 245)):   # stalagmites
+        T.cyl(cx, cz, 0.5, 0.0, 0, 2.0 + NR.uniform(0, 1.2), 6, 'rock_dark')
+        T.cyl(cx + 0.7, cz + 0.4, 0.3, 0.0, 0, 1.2, 5, 'rock')
+    for zz in range(244, 270, 8):                                               # lanterns on the walls and timber supports in the corridor
+        T.lamp(6.0, zz + 0.5)
+        T.lamp(57.5, zz + 0.5)
+        for xx in (29.8, 35.2):
+            T.box(xx - 0.12, zz - 0.12, xx + 0.12, zz + 0.12, 0, 3.0, 'wood_dark')
+        T.box(29.7, zz - 0.14, 35.3, zz + 0.14, 3.0, 3.25, 'wood_dark')
+    for (kind, qx, qz) in (('coal', 7, 246), ('coal', 9, 253), ('iron', 8, 259), ('iron', 12, 263), ('mithril', 6, 268), ('gold', 15, 246),
+                           ('silver', 18, 256), ('gems', 11, 243), ('clay', 21, 267),
+                           ('coal', 52, 246), ('coal', 55, 254), ('iron', 56, 261), ('mithril', 53, 267), ('gold', 46, 250), ('silver', 49, 265),
+                           ('gems', 57, 244), ('clay', 43, 259), ('mithril', 45, 268)):
+        far_rock(kind, qx, qz)
+    rock_field(6, 242, 28, 271, 0.05, mat=('rock_dark', 'rock'))
+    rock_field(38, 242, 59, 271, 0.05, mat=('rock_dark', 'rock'))
+    T.pens.append(('cavew', 6, 242, 26, 270))
+    T.pens.append(('cavee', 38, 242, 58, 270))
+    taken = []
+    populate('giant_spider', 'cavew', 5, free_tiles(6, 242, 26, 270), taken)
+    populate('giant_rat', 'cavew', 4, free_tiles(6, 242, 26, 270), taken)
+    populate('cave_spider', 'cavew', 4, free_tiles(6, 242, 26, 270), taken)
+    populate('giant_mole', 'cavew', 2, free_tiles(6, 242, 26, 270), taken)
+    taken = []
+    populate('giant_spider', 'cavee', 5, free_tiles(38, 242, 58, 270), taken)
+    populate('giant_rat', 'cavee', 4, free_tiles(38, 242, 58, 270), taken)
+    populate('cave_spider', 'cavee', 4, free_tiles(38, 242, 58, 270), taken)
+    populate('giant_mole', 'cavee', 2, free_tiles(38, 242, 58, 270), taken)
+
+    # ---- the desert ruins (z 272-303): colonnades, obelisks, mummies, and the dragon's temple in the south-east
+    for zz in range(276, 303, 5):                                               # a ruined colonnade either side of the road
+        pillar(27.5, zz + 0.5, 3.0, broken=NR.random() < 0.4)
+        pillar(37.5, zz + 0.5, 3.0, broken=NR.random() < 0.4)
+    for (ox, oz) in ((9, 280), (55, 280), (10, 298), (22, 292)):                # obelisks
+        T.box(ox - 0.35, oz - 0.35, ox + 0.35, oz + 0.35, 0, 0.5, 'stone_dark')
+        T.box(ox - 0.25, oz - 0.25, ox + 0.25, oz + 0.25, 0.5, 3.4, 'stone_light')
+        T.cyl(ox + 0.0, oz + 0.0, 0.25, 0.0, 3.4, 3.9, 4, 'gold', rot=0.78)
+        T.mark(ox - 0.35, oz - 0.35, ox + 0.35, oz + 0.35, 'o')
+    for (wx0, wz0, wx1, wz1) in ((6, 286, 16, 286.7), (6, 286, 6.7, 292), (46, 276, 56, 276.7), (56, 276, 56.7, 282), (12, 300, 22, 300.7)):   # broken walls
+        T.box(wx0, wz0, wx1, wz1, 0, 1.4 + NR.uniform(-0.3, 0.5), 'stone')
+        T.mark(wx0, wz0, wx1, wz1, 'o')
+    for _ in range(40):                                                         # dunes of rubble and dead scrub
+        xx, zz = NR.randint(1, 62), NR.randint(273, 302)
+        if T.grid[zz][xx] == '.' and abs(xx - 33) > 5:
+            T.blob(xx + NR.uniform(0.2, 0.8), zz + NR.uniform(0.2, 0.8), 0.0, NR.uniform(0.3, 0.8), NR.uniform(0.3, 0.7), NR.uniform(0.15, 0.4), 'sand', jitter=0.1, sub=1)
+    for _ in range(16):
+        xx, zz = NR.randint(2, 61), NR.randint(273, 302)
+        if T.grid[zz][xx] == '.' and abs(xx - 33) > 5:
+            T.rock(xx + .5, zz + .5, NR.uniform(0.6, 1.2), 'stone')
+    # the dragon's temple: a walled platform with columns, bone piles and a hoard
+    for (a, b, c, d) in ((44, 290, 64, 291), (44, 290, 45, 297), (44, 299.5, 45, 304), (62, 290, 64, 304)):
+        T.box(a, b, c, d, 0, 1.6, 'stone_dark')
+        T.mark(a, b, c, d, 'o')
+    for (cx, cz) in ((48, 293), (48, 301), (58, 293), (58, 301)):
+        pillar(cx + 0.5, cz + 0.5, 3.4, broken=(cx + cz) % 2 == 0)
+    for _ in range(14):
+        xx, zz = NR.randint(46, 61), NR.randint(292, 302)
+        T.blob(xx + NR.uniform(0.2, 0.8), zz + NR.uniform(0.2, 0.8), 0.0, NR.uniform(0.15, 0.3), NR.uniform(0.12, 0.25), NR.uniform(0.1, 0.18), 'bone', jitter=0.05, sub=1)
+    for _ in range(26):                                                         # the hoard
+        T.blob(54.0 + NR.uniform(-2, 2), 297.0 + NR.uniform(-1.5, 1.5), 0.0, NR.uniform(0.15, 0.3), NR.uniform(0.15, 0.3), NR.uniform(0.08, 0.16), 'gold', jitter=0.04, sub=1)
+    T.sign(road2(274) + 4.6, 273.6)
+    T.pens.append(('ruinsw', 6, 274, 24, 290))
+    T.pens.append(('ruinse', 40, 274, 58, 288))
+    T.pens.append(('lair', 46, 292, 61, 303))
+    taken = []
+    populate('desert_mummy', 'ruinsw', 3, free_tiles(6, 274, 24, 290), taken)
+    populate('desert_mummy', 'ruinse', 3, free_tiles(40, 274, 58, 288), taken)
+    populate('scorpion', 'ruinsw', 4, free_tiles(6, 274, 24, 290), taken)
+    populate('scorpion', 'ruinse', 4, free_tiles(40, 274, 58, 288), taken)
+    populate('jackal', 'ruinsw', 3, free_tiles(6, 274, 24, 290), taken)
+    populate('jackal', 'ruinse', 3, free_tiles(40, 274, 58, 288), taken)
+    taken = []
+    populate('dragon', 'lair', 1, free_tiles(51, 296, 58, 300), taken)
+    populate('baby_dragon', 'lair', 2, free_tiles(47, 293, 60, 302), taken)
+
+    # ---- the Abyss (z 304-335): black ground, red cracks, braziers and the wanderers
+    for zz in (304.0,):                                                         # the warning gate
+        for xx in (28.0, 36.0):
+            T.cyl(xx, zz + 0.5, 0.7, 0.55, 0, 4.4, 7, 'obsidian')
+            T.mark(int(xx) - 1, int(zz), int(xx) + 1, int(zz) + 1, 'o')
+        T.box(27.4, zz + 0.1, 36.6, zz + 0.9, 4.3, 4.9, 'obsidian')
+        for kx in (30.0, 32.0, 34.0):
+            T.blob(kx, zz + 0.5, 4.95, 0.25, 0.25, 0.3, 'bone', jitter=0.03, sub=1)
+    T.sign(road2(303) - 3.8, 302.6)
+    for _ in range(46):                                                         # glowing cracks in the ground
+        cx, cz = NR.uniform(2, 62), NR.uniform(306, 334)
+        if abs(cx - 33) < 4.5:
+            continue
+        ang = NR.uniform(0, 3.14)
+        for k in range(NR.randint(3, 6)):
+            T.box(cx + math.cos(ang) * k * 0.7 - 0.07, cz + math.sin(ang) * k * 0.7 - 0.05, cx + math.cos(ang) * k * 0.7 + 0.35, cz + math.sin(ang) * k * 0.7 + 0.07,
+                  0.0, 0.025, 'lava')
+    for (bx, bz) in ((26, 310), (40, 310), (14, 318), (52, 318), (26, 326), (40, 326), (8, 330), (58, 330)):   # braziers
+        T.cyl(bx + 0.5, bz + 0.5, 0.42, 0.30, 0, 0.9, 8, 'obsidian')
+        T.cyl(bx + 0.5, bz + 0.5, 0.34, 0.30, 0.9, 1.0, 8, 'lava')
+        T.cyl(bx + 0.5, bz + 0.5, 0.18, 0.0, 1.0, 1.55, 6, 'glow')
+        T.mark(bx, bz, bx + 1, bz + 1, 'o')
+    for _ in range(28):                                                         # broken pillars and bone heaps
+        xx, zz = NR.randint(2, 61), NR.randint(307, 334)
+        if T.grid[zz][xx] == '.' and abs(xx - 33) > 4:
+            if NR.random() < 0.5:
+                pillar(xx + 0.5, zz + 0.5, NR.uniform(2.2, 3.6), broken=NR.random() < 0.6, mat='obsidian')
+            else:
+                for _k in range(4):
+                    T.blob(xx + NR.uniform(0.1, 0.9), zz + NR.uniform(0.1, 0.9), 0.0, NR.uniform(0.12, 0.25), NR.uniform(0.1, 0.2), NR.uniform(0.08, 0.15), 'bone', jitter=0.04, sub=1)
+    for _ in range(10):                                                         # dead trees
+        xx, zz = NR.randint(2, 61), NR.randint(307, 334)
+        if T.grid[zz][xx] == '.' and abs(xx - 33) > 4:
+            T.cyl(xx + 0.5, zz + 0.5, 0.2, 0.08, 0, 2.2, 5, 'obsidian')
+            T.obox((xx + 0.5, zz + 0.5, 1.5), (xx + 1.2, zz + 0.2, 2.4), 0.1, 0.1, 'obsidian')
+            T.mark(xx, zz, xx + 1, zz + 1, 'o')
+    T.pens.append(('abyss', 4, 307, 60, 334))
+    taken = []
+    abyss_tiles = free_tiles(4, 307, 60, 334)
+    populate('abyss_warrior', 'abyss', 4, abyss_tiles, taken)
+    populate('abyss_archer', 'abyss', 3, abyss_tiles, taken)
+    populate('abyss_mage', 'abyss', 3, abyss_tiles, taken)
+    populate('abyss_champion', 'abyss', 2, abyss_tiles, taken)
+    populate('hellhound', 'abyss', 3, abyss_tiles, taken)
+    populate('black_knight', 'abyss', 2, abyss_tiles, taken)
+    populate('black_dragon', 'abyss', 1, free_tiles(20, 326, 44, 334), taken)
+    for (qx, qz) in ((7, 312), (57, 315), (9, 326), (56, 328)):
+        far_rock('adamant', qx, qz)
+
     # ---- trees, rocks & flowers ----------------------------------------------------------------
     def free(x, z, pad=1):
         for dz in range(-pad, pad + 1):
@@ -1778,12 +2189,13 @@ def build():
 
 
     # ---- the road and Millbrook: trees to chop, flowers, bushes, boulders on the bank, and more fishing spots ------------------
+    VH = 176   # (these loops stop at the end of Millbrook: the far south has its own scatter above)
     vplaced = []
     tries = 0
     while len(vplaced) < 170 and tries < 12000:
         tries += 1
-        x, z = VR.randint(1, W - 2), VR.randint(HT, H - 2)
-        edge = min(x, W - 1 - x, H - 1 - z)
+        x, z = VR.randint(1, W - 2), VR.randint(HT, VH - 2)
+        edge = min(x, W - 1 - x, VH - 1 - z)
         if x < wx(z) + 2 or not free(x, z, 1):
             continue
         if VR.random() > (0.9 if edge < 6 else (0.20 if z < 96 else 0.10)):
@@ -1793,18 +2205,18 @@ def build():
         vplaced.append((x, z))
         T.tree(x + VR.uniform(0.2, 0.8), z + VR.uniform(0.2, 0.8))
     for _ in range(110):
-        x, z = VR.randint(wx(HT) + 2, W - 2), VR.randint(HT, H - 2)
+        x, z = VR.randint(wx(HT) + 2, W - 2), VR.randint(HT, VH - 2)
         if free(x, z, 1):
             T.flower_patch(x + .5, z + .5, VR.randint(4, 9), 0.7)
     for _ in range(30):
-        x, z = VR.randint(wx(HT) + 2, W - 2), VR.randint(HT, H - 2)
+        x, z = VR.randint(wx(HT) + 2, W - 2), VR.randint(HT, VH - 2)
         if free(x, z, 1):
             T.bush(x + .5, z + .5, flowers=VR.random() < 0.4)
-    for z in range(HT + 2, H - 2, 3):                                              # boulders along the bank
+    for z in range(HT + 2, VH - 2, 3):                                              # boulders along the bank
         T.rock(wx(z) + VR.uniform(0.3, 1.1), z + VR.uniform(0.2, 0.8), VR.uniform(0.7, 1.3), 'cliff' if VR.random() < .5 else 'rock')
     def shore_ok2(z):
         e = wx(z)
-        return HT + 2 <= z < H - 2 and T.grid[z][e] == '.' and T.grid[z][e + 1] == '.' and (e - 1, z) in water
+        return HT + 2 <= z < VH - 2 and T.grid[z][e] == '.' and T.grid[z][e + 1] == '.' and (e - 1, z) in water
     for z0 in (101, 112, 122, 132, 143, 152, 162, 171):
         for dz in (0, 1, -1, 2, -2, 3, -3):
             if shore_ok2(z0 + dz) and not any(abs(z0 + dz - int(sz_)) < 4 for sx_, sz_, _ in T.spots if sz_ > HT):
@@ -1812,7 +2224,7 @@ def build():
                 break
     rr2 = random.Random(556)                                                       # reeds and lily pads for the river down here
     spot_tiles2 = {(int(sx_), int(sz_)) for sx_, sz_, _ in T.spots}
-    for z in range(HT, H - 1):
+    for z in range(HT, VH - 1):
         x = wx(z) - 1
         if (x, z) in spot_tiles2 or (x, z) not in water or rr2.random() > 0.30:
             continue
@@ -1823,7 +2235,7 @@ def build():
             if rr2.random() < 0.6:
                 T.cyl(rx_, rz_, 0.028, 0.026, rh - 0.1, rh + 0.1, 5, 'trunk')
     for _ in range(40):
-        z = rr2.randint(HT + 2, H - 3)
+        z = rr2.randint(HT + 2, VH - 3)
         x = rr2.randint(0, max(0, wx(z) - 3))
         if (x, z) not in water or (x, z) in spot_tiles2:
             continue
@@ -1840,10 +2252,14 @@ def build():
                     continue
                 if not (tile_mat(x, z) or '').startswith('grass'):
                     continue
-                for _ in range(V.choice([1, 2, 2, 3])):
-                    T.grass_tuft(x + V.uniform(0.1, 0.9), z + V.uniform(0.1, 0.9), 0.34, V.choice([3, 4, 5]))
+                dense = z < 70 or 92 <= z < 180
+                for _ in range(V.choice([1, 2, 2, 3]) if dense else (V.choice([1, 1, 2]) if z < 216 else V.choice([0, 1, 1]))):
+                    T.grass_tuft(x + V.uniform(0.1, 0.9), z + V.uniform(0.1, 0.9), 0.34, V.choice([3, 4, 5]) if z < 216 else 3)
                 if V.random() < 0.05:
                     T.blob(x + V.uniform(.2, .8), z + V.uniform(.2, .8), 0.02, 0.1, 0.08, 0.06, V.choice(['rock', 'stone', 'rock_dark']), jitter=0.02, sub=1)
+
+    if WORLD:
+        return T
 
     # ---- skirt: far ground + forest ring -------------------------------------------------------
     S = 56
@@ -1897,7 +2313,7 @@ MATS = {}
 
 def build_tree_templates(T):
     """One standalone model per tree kind plus the stump, all at the origin (game scales/rotates/places them)."""
-    for seed, kind in ((11, 'round'), (12, 'pine'), (13, 'tall')):
+    for seed, kind in ((11, 'round'), (12, 'pine'), (13, 'tall'), (14, 'oak'), (15, 'willow'), (16, 'yew'), (17, 'teak'), (18, 'maple'), (19, 'mahogany'), (20, 'magic')):
         T.vrng = random.Random(seed)
         T.target = 'tree_' + kind
         T.tree_geom(0.0, 0.0, kind, 1.0, 0.0, 0)
@@ -1962,7 +2378,7 @@ def make_materials(names):
         bsdf.inputs['Roughness'].default_value = 1.0
         if 'Specular IOR Level' in bsdf.inputs:
             bsdf.inputs['Specular IOR Level'].default_value = 0.0
-        if n == 'glow':
+        if n in ('glow', 'lava'):
             bsdf.inputs['Emission Color'].default_value = hexlin(PAL[n])
             bsdf.inputs['Emission Strength'].default_value = 1.0
         if B and n in TEXMAP:
@@ -2013,7 +2429,17 @@ AREAS = [  # later entries win where they overlap
     (18, 3, 47, 25, 'Castle Courtyard'),
     (24, 6, 41, 16, 'Throne Hall'),
     (42, 31, 50, 38, 'Bank'),
+    (48, 132, 56, 139, 'Millbrook Bank'),
+    (47, 99, 62, 110, "Millbrook Crafters' Yard"),
     (42, 44, 52, 52, 'The Journey\'s Rest Inn'),
+    (10, 54, 22, 62, 'Castle Crypt'),
+    (0, 176, 64, 216, 'Lakeside'),
+    (42, 178, 62, 214, 'Wolf Wood'),
+    (0, 216, 64, 240, 'Troll Mountains'),
+    (0, 240, 64, 272, 'Mining Caves'),
+    (0, 272, 64, 304, 'Desert Ruins'),
+    (44, 290, 62, 304, "The Dragon's Temple"),
+    (0, 304, 64, 336, 'The Abyss'),
 ]
 
 
@@ -2021,11 +2447,14 @@ def write_map(T, spawn):
     os.makedirs(os.path.dirname(OUT_MAP), exist_ok=True)
     with open(OUT_MAP, 'w') as f:
         f.write('// Journey tile map. Generated by tools/build_town.py - edit the script, not this file.\n')
-        f.write('// . walkable   D door   # wall/building   ~ water   T tree   o prop (blocked)\n')
+        f.write('// . walkable   D door   # wall/building   ~ water   T tree   o prop (blocked)   f fence (blocked, but arrows and spells fly over)\n')
         f.write('@size %d %d\n@spawn %d %d\n' % (W, H, spawn[0], spawn[1]))
         for name, r in T.roof_rects.items():
             f.write('@roof %s %d %d %d %d\n' % (name, *[int(v) for v in r]))
-        for (x0, z0, x1, z1, name) in AREAS:
+        areas = list(AREAS)
+        if WORLD:   # the wild places first (they are broad), then the core's own, shifted to where it stands now
+            areas = list(WM.WILD_AREAS) + [(x0 + WM.OX, z0 + WM.OZ, x1 + WM.OX, z1 + WM.OZ, name) for (x0, z0, x1, z1, name) in AREAS] + list(getattr(T, 'extra_areas', []))
+        for (x0, z0, x1, z1, name) in areas:
             f.write('@area %d %d %d %d %s\n' % (x0, z0, x1, z1, name))
         for (x, z, kind, sc, rot) in T.trees:
             f.write('@tree %.2f %.2f %s %.2f %.1f\n' % (x, z, kind, sc, math.degrees(rot)))
@@ -2044,16 +2473,25 @@ def write_map(T, spawn):
         f.write('@rows\n')
         for row in T.grid:
             f.write(''.join(row) + '\n')
+    if WORLD:   # the Abyss is where the best resources are (tools/abyss_riches.py)
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import abyss_riches
+        abyss_riches.apply_file(OUT_MAP)
 
 
 if __name__ == '__main__':
     bpy.ops.wm.read_factory_settings(use_empty=True)
     make_materials(PAL.keys())
     T = build()
+    spawn = (32, 30)
+    if WORLD:
+        import world_wilds
+        T = world_wilds.expand(T, sys.modules[__name__])
+        spawn = (32 + WM.OX, 30 + WM.OZ)
     build_tree_templates(T)
     objs = make_objects(T)
     export_all(objs)
-    write_map(T, (32, 30))
+    write_map(T, spawn)
     if '--blend' in sys.argv:
         src = os.path.join(ROOT, 'source')
         os.makedirs(src, exist_ok=True)

@@ -29,6 +29,8 @@ public:
     // Advance time. `roll` returns a random number in [0,1). Returns what happened this call
     // (at most one event; call again next frame). GotLog ends the session.
     ChopEvent Update(float dt, int woodcuttingLevel, const std::function<double()>& roll);
+    // The same, with the chance of a log per swing worked out by the caller (tree kind, axe).
+    ChopEvent UpdateWithChance(float dt, float chance, const std::function<double()>& roll);
 
 private:
     int tree_ = -1;

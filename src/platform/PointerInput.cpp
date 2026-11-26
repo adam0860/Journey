@@ -8,7 +8,7 @@ namespace {
 constexpr float kDragPixels = 10.0f;      // movement before a press becomes a camera drag
 constexpr double kLongPressSeconds = 0.5; // hold still this long and it is a long press
 constexpr float kDegreesPerPixel = 0.35f;
-constexpr float kWheelZoom = 1.4f;        // distance units per mouse wheel notch
+constexpr float kWheelZoom = kWheelZoomUnits;
 constexpr float kPinchZoom = 0.03f;       // distance units per pixel of pinch
 constexpr float kRad2Deg = 180.0f / 3.14159265f;
 
@@ -62,7 +62,12 @@ PointerFrame PointerInput::Poll() {
     }
     if (pressing_ && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
         if (!dragging_ && Dist(m, down_) > kDragPixels * dpi) dragging_ = true;
-        if (dragging_) out.rotateDegrees = -(m.x - last_.x) * kDegreesPerPixel;
+        if (dragging_) {
+            out.rotateDegrees = -(m.x - last_.x) * kDegreesPerPixel;
+            out.dragging = true;
+            out.dragStart = down_;
+            out.dragDelta = {m.x - last_.x, m.y - last_.y};
+        }
         last_ = m;
         if (!dragging_ && !contextFired_ && GetTime() - pressTime_ >= kLongPressSeconds) {   // held still: long press
             contextFired_ = true;
@@ -77,7 +82,8 @@ PointerFrame PointerInput::Poll() {
         }
         pressing_ = false;
     }
-    out.zoomDelta -= GetMouseWheelMove() * kWheelZoom;
+    out.wheel = GetMouseWheelMove();
+    out.zoomDelta -= out.wheel * kWheelZoom;
     return out;
 }
 

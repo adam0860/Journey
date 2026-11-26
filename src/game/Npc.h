@@ -1,4 +1,4 @@
-// The creatures: chickens, cows, calves and goblins. Pure C++ (unit tested).
+// The creatures: animals, goblins, monsters and the fighters of the Abyss. Pure C++ (unit tested).
 //
 // They live in an area (the map's @pen / @npc lines - fenced for the farm animals, an open camp for the goblins) and wander
 // about it. Animals are not aggressive, but once you attack one it fights back and chases you (never out of its area).
@@ -10,19 +10,28 @@
 #include <string>
 #include <vector>
 
+#include "game/Combat.h"   // AttackKind, Rgb
 #include "game/Inventory.h"
+#include "game/People.h"   // PersonLook
 #include "world/TileMap.h"
 
 namespace journey {
 
-enum class Species { Chicken, Cow, Calf, Goblin, GoblinWarrior, Count };
+// Species ids are not saved anywhere (the map names species by key), but keep new ones at the end anyway.
+enum class Species {
+    Chicken, Cow, Calf, Goblin, GoblinWarrior,
+    GiantRat, Wolf, DarkWolf, GiantSpider,                 // animals: quadrupeds and a spider
+    Zombie, Skeleton, MountainTroll, DesertMummy, Dragon,  // monsters
+    AbyssWarrior, AbyssArcher, AbyssMage, AbyssChampion,   // fighters who look like people and fight like the hero
+    CaveSpider, Scorpion, Jackal, Hellhound, GiantMole,    // more animals (the same bodies in new colours and sizes)
+    Hobgoblin, Imp, BabyDragon, BlackDragon,
+    Bandit, DarkWizard, Barbarian, Ogre, SkeletonWarrior, BlackKnight, HillGiant,   // more people-shaped fighters
+    Count
+};
 constexpr int kSpeciesCount = static_cast<int>(Species::Count);
 
-struct LootEntry {
-    Item item;
-    float chance;      // 0..1
-    int minCount, maxCount;
-};
+// How a creature is built and animated (see render/AnimalRenderer and the humanoid drawing in main.cpp).
+enum class Rig { Bird, Quad, Biped, Spider, Dragon, Human };
 
 struct SpeciesInfo {
     const char* key;       // "chicken" (map file / model names)
@@ -33,20 +42,30 @@ struct SpeciesInfo {
     float speed;           // tiles per second
     float respawnSeconds;  // time after death until it is back
     const char* examine;
-    int lootCount;
-    LootEntry loot[4];
+    const char* lootKey;       // its loot table (game/Loot.cpp)
     bool aggressive = false;   // attacks the hero when he comes close
     int aggroRange = 0;        // ...within this many tiles
     const char* model = nullptr;   // model files are <model>_<colorway>_<part>.glb (null = key)
     int colorway = -1;         // which look (-1 = alternate by id)
     float scale = 1.0f;
     float height = 1.0f;       // how tall it stands, in metres (health bars and hit splats)
+    Rig rig = Rig::Quad;
+    AttackKind attackKind = AttackKind::Melee;   // how it hits the hero: some shoot, some cast
+    int attackRange = 1;       // tiles it can hit from (1 = melee)
+    Rgb spellColor = {255, 120, 30};   // the glow of its spell
+    int poison = 0;            // a hit that lands also poisons the hero for this many damage per poison tick (0 = none)
+    int pack = 0;              // when one is attacked, others of its kind within this many tiles join in
+    // People-shaped fighters (Rig::Human): how they look and what they carry (drawn with the hero's own body parts).
+    PersonLook look;
+    bool tintSkin = false, tintShirt = false, tintPants = false, bald = false;
+    Rgb skinTint = {255, 255, 255}, shirtTint = {255, 255, 255}, pantsTint = {255, 255, 255};
+    Item weapon = Item::None, shield = Item::None, helm = Item::None, body = Item::None, legs = Item::None;
 };
 
 const SpeciesInfo& GetSpecies(Species s);
 bool SpeciesFromKey(const std::string& key, Species* out);
 
-// What a kill drops: each loot entry is rolled separately. `roll` returns numbers in [0,1).
+// What a kill drops: the species' loot table, rolled (see game/Loot.h). `roll` returns numbers in [0,1).
 std::vector<ItemStack> RollLoot(Species s, const std::function<double()>& roll);
 
 struct Npc {
@@ -68,7 +87,12 @@ struct Npc {
     float walkPhase = 0;
     float idleLeft = 1;            // seconds until it wanders somewhere else
     bool hunting = false;          // fighting the hero: chases him and may hit him
+    int engagedBy = 0;             // another adventurer (game/Adventurers) is fighting it: it stands still facing him (0 = nobody)
+    float engageLeft = 0;          // ...and is released if he stops saying so for a second
     float huntLeft = 0;
+    float regenT = 0;              // a hurt creature mends a hit point a minute (kRegenSeconds)
+    TileCoord chaseTile{0, 0};     // an adventurer it is going for (game/Adventurers: Abyss creatures attack the other players too)
+    float chaseLeft = 0;           // ...for this much longer unless told again
     float repathLeft = 0;
     std::deque<TileCoord> path;
 
@@ -102,7 +126,13 @@ public:
 
     // Damages an animal. Returns true if that killed it.
     bool Hurt(int id, int damage);
-    void StartHunt(int id);
+    // Another adventurer's fight: the creature stops wandering and faces (x, z) for the next second (call it every frame of the fight).
+    // The hero's own fights come first: a creature hunting the hero ignores this.
+    void Engage(int id, int who, float x, float z);
+    bool Engaged(int id) const;
+    // The creature goes for this tile (an adventurer standing there) for `seconds` unless told again; it stands next to it (or, a shooter, at range).
+    void ChaseTile(int id, TileCoord t, float seconds);
+    void StartHunt(int id);   // (a pack animal alerts the others of its kind nearby)
     void RefreshHunt(int id);
     void StopAllHunts();
 
@@ -112,6 +142,7 @@ private:
     void Chase(Npc& n, const TileMap& map, TileCoord player, const std::function<double()>& roll);
     void Respawn(Npc& n, const TileMap& map, TileCoord player, const std::function<double()>& roll);
     void Move(Npc& n, float dt);
+    void Alert(const Npc& n);   // the pack joins in
 
     std::vector<Npc> npcs_;
     int heroCombat_ = 3;

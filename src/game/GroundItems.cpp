@@ -4,7 +4,7 @@
 
 namespace journey {
 
-int GroundItems::Drop(TileCoord t, ItemStack stack) {
+int GroundItems::Drop(TileCoord t, ItemStack stack, float life) {
     if (stack.item == Item::None || stack.count <= 0) return -1;
     Pile* pile = nullptr;
     for (Pile& p : piles_)
@@ -18,20 +18,34 @@ int GroundItems::Drop(TileCoord t, ItemStack stack) {
     }
     bool merged = false;
     if (GetItemInfo(stack.item).stackable) {
-        for (ItemStack& s : pile->items)
-            if (s.item == stack.item) {
-                s.count += stack.count;
+        for (size_t i = 0; i < pile->items.size(); ++i)
+            if (pile->items[i].item == stack.item) {
+                pile->items[i].count += stack.count;
+                pile->ages[i] = 0.0f;   // the stack is refreshed as a whole
+                pile->lives[i] = std::max(pile->lives[i], life);
                 merged = true;
             }
     }
-    if (!merged) pile->items.insert(pile->items.begin(), stack);
-    pile->age = 0.0f;
+    if (!merged) {
+        pile->items.insert(pile->items.begin(), stack);
+        pile->ages.insert(pile->ages.begin(), 0.0f);
+        pile->lives.insert(pile->lives.begin(), life);
+    }
     return pile->id;
 }
 
 void GroundItems::Update(float dt) {
-    for (Pile& p : piles_) p.age += dt;
-    piles_.erase(std::remove_if(piles_.begin(), piles_.end(), [](const Pile& p) { return p.age >= kLifeSeconds; }), piles_.end());
+    for (Pile& p : piles_) {
+        for (size_t i = p.items.size(); i-- > 0;) {   // backwards, so erasing keeps the indices ahead valid
+            p.ages[i] += dt;
+            if (p.ages[i] >= p.lives[i]) {
+                p.items.erase(p.items.begin() + static_cast<long>(i));
+                p.ages.erase(p.ages.begin() + static_cast<long>(i));
+                p.lives.erase(p.lives.begin() + static_cast<long>(i));
+            }
+        }
+    }
+    piles_.erase(std::remove_if(piles_.begin(), piles_.end(), [](const Pile& p) { return p.items.empty(); }), piles_.end());
 }
 
 const Pile* GroundItems::Find(int id) const {
@@ -64,8 +78,13 @@ bool GroundItems::TakeOne(int pileId, int index, Inventory* bag, ItemStack* take
     const int added = bag->Add(s.item, s.count);
     if (added <= 0) return false;
     if (taken) *taken = {s.item, added};
-    if (added >= s.count) p->items.erase(p->items.begin() + index);
-    else p->items[index].count -= added;
+    if (added >= s.count) {
+        p->items.erase(p->items.begin() + index);
+        p->ages.erase(p->ages.begin() + index);
+        p->lives.erase(p->lives.begin() + index);
+    } else {
+        p->items[index].count -= added;
+    }
     RemoveIfEmpty(pileId);
     return true;
 }

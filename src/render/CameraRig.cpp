@@ -34,9 +34,27 @@ void CameraRig::SetView(float yawDeg, float pitchDeg, float dist) {
     dist_ = std::clamp(dist, kMinDist, kMaxDist);
 }
 
+namespace {
+constexpr float kMaxPitch = 82.0f;
+}
+
+void CameraRig::Avoid(const std::function<bool(Vector3, Vector3)>& blocked, float dt) {
+    const Vector3 focus = {fx_, kFocusHeight, fz_};
+    const float yaw = yaw_ * kDeg2Rad;
+    float need = 0.0f;   // the smallest lift that gives a clear view
+    for (; pitch_ + need < kMaxPitch; need += 4.0f) {
+        const float p = (pitch_ + need) * kDeg2Rad;
+        const Vector3 at = {fx_ + std::sin(yaw) * std::cos(p) * dist_, kFocusHeight + std::sin(p) * dist_, fz_ + std::cos(yaw) * std::cos(p) * dist_};
+        if (!blocked(focus, at)) break;
+    }
+    need = std::max(0.0f, std::min(need, kMaxPitch - pitch_));
+    const float k = 1.0f - std::exp(-(need > lift_ ? 8.0f : 3.0f) * dt);   // up quickly, down gently
+    lift_ += (need - lift_) * k;
+}
+
 Vector3 CameraRig::Position() const {
     const float yaw = yaw_ * kDeg2Rad;
-    const float pitch = pitch_ * kDeg2Rad;
+    const float pitch = (pitch_ + lift_) * kDeg2Rad;
     return {fx_ + std::sin(yaw) * std::cos(pitch) * dist_, kFocusHeight + std::sin(pitch) * dist_,
             fz_ + std::cos(yaw) * std::cos(pitch) * dist_};
 }

@@ -40,12 +40,14 @@ private:
         float legL = 0, legR = 0;                                  // chickens
         float spreadLegs = 0;                                      // lying down: legs splay out sideways
         float armL = 0, armR = 0;                                  // goblins: swing about the shoulder (negative = forward / up)
+        // (the dragon's wings use wingRoll too)
     };
     Model* Get(const std::string& file);
     void DrawPart(const std::string& file, const Joint& joint, float rx, float ry, float rz, const Matrix& body);
     Pose AnimateChicken(const Npc& n, float time) const;
     Pose AnimateBovine(const Npc& n, float time, bool calf) const;
     Pose AnimateGoblin(const Npc& n, float time) const;
+    Pose AnimatePredator(const Npc& n, float time, Rig rig) const;   // wolves, rats, spiders and the dragon
 
     std::string dir_;
     const LitShader* shader_ = nullptr;

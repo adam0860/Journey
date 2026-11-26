@@ -107,9 +107,9 @@ void PropRenderer::DrawStations(const std::vector<StationDef>& stations, int bus
         const StationDef& st = stations[si];
         if ((st.x - focusX) * (st.x - focusX) + (st.z - focusZ) * (st.z - focusZ) > kDrawRange * kDrawRange) continue;
         const bool furnace = st.kind == "furnace";
-        Model* m = Named(furnace ? "furnace" : "anvil");
+        Model* m = Named(furnace ? "furnace" : (st.kind == "anvil" ? "anvil" : st.kind.c_str()));   // (tanner, jeweller, wheel: a model of the same name)
         if (m) {
-            const float sc = furnace ? 1.0f : 1.35f;   // anvils are drawn a little bigger so they read at a distance
+            const float sc = st.kind == "anvil" ? 1.35f : 1.0f;   // anvils are drawn a little bigger so they read at a distance
             Matrix tr = MatrixScale(sc, sc, sc);
             tr = MatrixMultiply(tr, MatrixRotateY(st.yawDegrees * DEG2RAD));
             tr = MatrixMultiply(tr, MatrixTranslate(st.x, 0.0f, st.z));
@@ -233,7 +233,7 @@ void PropRenderer::DrawFires(const Fires& fires, float time, float focusX, float
         // ---- the logs (and the stone ring): charred once it has burnt out
         if (hasFire_) {
             const float grow = std::min(1.0f, 0.4f + f.age * 1.5f);
-            const float s = f.Burning() ? grow : 0.9f;
+            const float s = (f.Burning() ? grow : 0.9f) * (f.big ? 1.7f : 1.0f);
             Matrix tr = MatrixScale(s, s, s);
             tr = MatrixMultiply(tr, MatrixRotateY(yaw));
             tr = MatrixMultiply(tr, MatrixTranslate(x, 0.0f, z));
@@ -251,12 +251,13 @@ void PropRenderer::DrawFires(const Fires& fires, float time, float focusX, float
         power *= std::min(1.0f, f.burnLeft / 8.0f);
         if (power <= 0.01f) continue;
 
+        const float K = f.big ? 1.8f : 1.0f;   // a bonfire's flames and glow are bigger
         // ---- warm glow on the ground (additive)
         BeginBlendMode(BLEND_ADDITIVE);
         const float flick = 0.9f + 0.1f * std::sin(time * 13.0f + f.id) + 0.05f * std::sin(time * 29.0f);
-        DrawCylinder({x, 0.03f, z}, 1.4f * power, 1.4f * power, 0.004f, 24, Color{255, 120, 30, A(0.05f * flick)});
-        DrawCylinder({x, 0.032f, z}, 0.95f * power, 0.95f * power, 0.004f, 24, Color{255, 140, 40, A(0.08f * flick)});
-        DrawCylinder({x, 0.034f, z}, 0.55f * power, 0.55f * power, 0.004f, 20, Color{255, 170, 60, A(0.14f * flick)});
+        DrawCylinder({x, 0.03f, z}, 1.4f * K * power, 1.4f * K * power, 0.004f, 24, Color{255, 120, 30, A(0.05f * flick)});
+        DrawCylinder({x, 0.032f, z}, 0.95f * K * power, 0.95f * K * power, 0.004f, 24, Color{255, 140, 40, A(0.08f * flick)});
+        DrawCylinder({x, 0.034f, z}, 0.55f * K * power, 0.55f * K * power, 0.004f, 20, Color{255, 170, 60, A(0.14f * flick)});
         EndBlendMode();
 
         // ---- flames: stacked cones, drawn without writing depth so the bright core shows through the outer glow
@@ -265,7 +266,7 @@ void PropRenderer::DrawFires(const Fires& fires, float time, float focusX, float
         auto cone = [&](float ox, float oz, float h, float r, float ph, Color c) {
             const float fl = (0.86f + 0.14f * std::sin(time * 11.0f + ph)) * power;
             const float sway = 0.05f * std::sin(time * 7.0f + ph * 2.0f);
-            DrawCylinderEx({x + ox, 0.10f, z + oz}, {x + ox + sway, 0.10f + h * fl, z + oz + sway * 0.6f}, r * power, 0.0f, 8, c);
+            DrawCylinderEx({x + ox * K, 0.10f, z + oz * K}, {x + ox * K + sway, 0.10f + h * K * fl, z + oz * K + sway * 0.6f}, r * K * power, 0.0f, 8, c);
         };
         cone(0.0f, 0.0f, 0.62f, 0.18f, 0.0f, Color{255, 96, 18, 215});
         cone(0.09f, 0.04f, 0.40f, 0.10f, 1.7f, Color{255, 120, 24, 205});

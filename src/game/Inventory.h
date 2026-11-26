@@ -48,13 +48,250 @@ enum class Item : int {
     // ---- money and shop food ----
     Coins,
     Bread,
-    Count
+    // ---- archery (game/Archery.h): six bows (wood x short/long), four kinds of arrows ----
+    Shortbow,
+    Longbow,
+    OakShortbow,
+    OakLongbow,
+    YewShortbow,
+    YewLongbow,
+    BronzeArrows,
+    IronArrows,
+    SteelArrows,
+    MithrilArrows,
+    // ---- magic (game/Magic.h): runes, staffs and wizard robes ----
+    AirRune,
+    WaterRune,
+    EarthRune,
+    FireRune,
+    MindRune,
+    ChaosRune,
+    Staff,
+    AirStaff,
+    WaterStaff,
+    EarthStaff,
+    FireStaff,
+    WizardHat,
+    WizardRobe,
+    WizardSkirt,
+    // ---- from the bigger monsters ----
+    BigBones,
+    DragonBones,
+    // ---- woodcutting: better trees and axes
+    OakLogs,
+    WillowLogs,
+    YewLogs,
+    IronAxe,
+    SteelAxe,
+    MithrilAxe,
+    // ---- fishing: more tools and fish
+    FlyFishingRod,
+    Harpoon,
+    LobsterPot,
+    Feathers,
+    RawTrout,
+    Trout,
+    RawSalmon,
+    Salmon,
+    RawTuna,
+    Tuna,
+    RawLobster,
+    Lobster,
+    RawSwordfish,
+    Swordfish,
+    // ---- mining: more rocks
+    Clay,
+    SilverOre,
+    GoldOre,
+    UncutSapphire,
+    UncutEmerald,
+    UncutRuby,
+    SilverBar,
+    GoldBar,
+    // ---- crafting: gems, leather, jewellery, pottery
+    Chisel,
+    Sapphire,
+    Emerald,
+    Ruby,
+    Needle,
+    Thread,
+    Leather,
+    LeatherCap,
+    LeatherBody,
+    LeatherChaps,
+    RingMould,
+    AmuletMould,
+    GoldRing,
+    SapphireRing,
+    EmeraldRing,
+    RubyRing,
+    GoldAmulet,
+    SapphireAmulet,
+    EmeraldAmulet,
+    RubyAmulet,
+    Pot,
+    PieDish,
+    Bowl,
+    // ---- teleport scrolls (Read one to be whisked away; see game/Teleport.h)
+    CastleScroll,
+    MillbrookScroll,
+    LakesideScroll,
+    // ---- adamant, the fifth metal (Gear.h: Tier::Adamant). The eleven pieces are consecutive, in GearType order:
+    // dagger, sword, battleaxe, mace, helm, shield, legs, body, pickaxe, axe, arrows.
+    AdamantOre,
+    AdamantBar,
+    AdamantFirst,
+    AdamantLast = AdamantFirst + 10,
+    // ---- more fish (raw, cooked)
+    RawSardine,
+    Sardine,
+    RawHerring,
+    Herring,
+    RawPike,
+    Pike,
+    RawBass,
+    Bass,
+    RawShark,
+    Shark,
+    // ---- rarer gems and the jewellery made from them
+    UncutDiamond,
+    Diamond,
+    DiamondRing,
+    DiamondAmulet,
+    UncutDragonstone,
+    Dragonstone,
+    DragonstoneAmulet,
+    // ---- unique jewellery (monster drops and quest rewards)
+    MummysAmulet,
+    TrollToothAmulet,
+    AbyssalRing,
+    // ---- round 10, the workshop round. Seven more smithed types in five metals (Gear.h: Scimitar..Chainbody), tier by tier:
+    // tier * 7 + (type - Scimitar). GearItem() / GearOf() turn these into (tier, type).
+    Gear2First,
+    Gear2Last = Gear2First + 34,
+    // ---- tools and woodwork: a knife carves logs into bows, a bowstring turns them into weapons
+    Knife,
+    Bowstring,
+    UnstrungShortbow,
+    UnstrungLongbow,
+    UnstrungOakShortbow,
+    UnstrungOakLongbow,
+    UnstrungYewShortbow,
+    UnstrungYewLongbow,
+    // ---- more trees
+    MapleLogs,
+    TeakLogs,
+    MahoganyLogs,
+    MagicLogs,
+    // ---- cooking: ingredients, doughs, dishes, game meat
+    Flour,
+    JugOfWater,
+    Cheese,
+    Tomato,
+    Potato,
+    CookingApple,
+    BucketOfMilk,
+    BreadDough,
+    PastryDough,
+    PizzaBase,
+    RawMeatPie,
+    MeatPie,
+    RawApplePie,
+    ApplePie,
+    RawFishPie,
+    FishPie,
+    UncookedStew,
+    Stew,
+    UncookedCake,
+    Cake,
+    RawPizza,
+    PlainPizza,
+    BurntPie,
+    RawRatMeat,
+    RatMeat,
+    RawWolfMeat,
+    WolfMeat,
+    Onion,
+    Cabbage,
+    Redberries,
+    RawRedberryPie,
+    RedberryPie,
+    RawGardenPie,
+    GardenPie,
+    // ---- more fish
+    RawMackerel,
+    Mackerel,
+    RawCod,
+    Cod,
+    RawEel,
+    Eel,
+    RawMantaRay,
+    MantaRay,
+    RawSeaTurtle,
+    SeaTurtle,
+    // ---- leatherwork, and the plainer gems
+    HardLeather,
+    HardLeatherCap,
+    HardLeatherBody,
+    HardLeatherChaps,
+    StuddedCap,
+    StuddedBody,
+    StuddedChaps,
+    Studs,
+    UncutOpal,
+    Opal,
+    UncutJade,
+    Jade,
+    UncutRedTopaz,
+    RedTopaz,
+    // ---- quest items
+    Spade,
+    Candle,
+    RustyKey,
+    CaptainsLog,
+    // ---- jewellery from the plainer gems
+    OpalRing,
+    OpalAmulet,
+    JadeRing,
+    JadeAmulet,
+    RedTopazRing,
+    RedTopazAmulet,
+    // ---- round 11: boots and gauntlets in five metals (Gear.h: Boots, Gauntlets; id = tier * 2 + type - 18), leather boots and gloves, capes
+    Gear3First,
+    Gear3Last = Gear3First + 9,
+    LeatherBoots,
+    HardLeatherBoots,
+    StuddedBoots,
+    LeatherGloves,
+    HardLeatherGloves,
+    AttackCape,
+    StrengthCape,
+    DefenceCape,
+    HitpointsCape,
+    RangedCape,
+    MagicCape,
+    PrayerCape,
+    MiningCape,
+    SmithingCape,
+    FishingCape,
+    CookingCape,
+    WoodcuttingCape,
+    FiremakingCape,
+    CraftingCape,
+    QuestCape,
+    BronzeDarts, IronDarts, SteelDarts, MithrilDarts, AdamantDarts,   // round 13: thrown weapons (Archery.h)
+    ElmswickScroll, SaltmereScroll,                                    // round 13: teleport scrolls for the two wild-country towns
+    AbyssalAmulet,                                                     // round 13: the rarest drop of the Abyss (its champions, knights and dragon, and the best of the players who hunt there)
+    Count,
+    // Names for two of the adamant pieces (aliases: they come after Count on purpose, so they do not add items).
+    AdamantPickaxe = AdamantFirst + 8,
+    AdamantAxe = AdamantFirst + 9,
+    AdamantArrows = AdamantFirst + 10
 };
 
 struct ItemInfo {
     const char* name;
     bool stackable;   // stackable items share one slot (coins, arrows...); everything else takes a slot each
-    bool tool;        // starter tools cannot be dropped (there is no shop to buy a new one yet)
     bool raw;         // can be cooked on a fire
     bool food;        // can be eaten
     int heals;        // hit points restored when eaten
@@ -63,6 +300,11 @@ struct ItemInfo {
     const char* model;     // ground model file: assets/models/props/drop_<model>.glb (see tools/build_items.py)
 };
 const ItemInfo& GetItemInfo(Item item);
+
+// A teleport scroll (Read one to be whisked to its town; the places are in Gameplay.cpp).
+inline bool IsScroll(Item i) {
+    return i == Item::CastleScroll || i == Item::MillbrookScroll || i == Item::LakesideScroll || i == Item::ElmswickScroll || i == Item::SaltmereScroll;
+}
 
 // What an item is worth in coins (shops sell at about this price and buy for a share of it). 0 = worthless (burnt food).
 int ItemValue(Item item);
@@ -75,7 +317,7 @@ struct ItemStack {
 };
 
 // What you can do with a bag item (buttons under the bag grid, and the long-press menu).
-enum class ItemAction { Light, Cook, Eat, Bury, Wield, Wear, Use, Drop, Examine };
+enum class ItemAction { Light, Cook, Eat, Bury, Wield, Wear, Use, Drop, Examine, Read, Bonfire };   // (Bonfire: four logs at once, see Fires.h)
 const char* ActionName(ItemAction a);
 
 class Inventory {

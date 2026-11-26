@@ -4,13 +4,17 @@ An offline, single-player, RuneScape-Classic-style RPG for Windows and Android.
 C++17 + [raylib](https://www.raylib.com), art built procedurally in Blender.
 Design doc: *Journey - Game Design Document* (kept in Claude Docs).
 
-**Status: prototype.** You can walk around Castle Town (castle, throne hall, bank, inn, market square,
-houses, river) by clicking, chop trees for logs, net fish at the river, light fires and cook, mine ore in the quarry, smelt it
-in the furnace and smith weapons and armour at the anvils, wear them, and fight the chickens, cows and calves in their pens
-(turn-based combat with hit splats, loot piles, bury bones, weapon swings and shield blocks), fight goblins for coins, spend them in
-the shops, and walk the long road south to the village of Millbrook (five more shops, a second smithy and mine, a farm, a windmill) -
-14 skills, bag, skills, gear and combat tabs.
-No quests or human NPCs yet - see the milestone list in the GDD.
+**Status: playable prototype.** A 192 x 400 world: Castle Town (castle, throne hall, bank, inn, market, smithy, quarry, crypt), Millbrook village
+(shops, bank, crafters' yard, chapel, mine, farm) and a long road south through Lakeside (lake, ferry), the Wolf Wood, the Troll Mountains,
+the Mining Caves, the Desert Ruins (and a dragon) down to the dangerous Abyss, with wild country on every side: pine forests, the woodcutters' village of
+Elmswick, swamp and barrow downs in the west; farmland, the harbour of Saltmere on the Eastern Sea, the standing stones, the Iron Range and the dune
+desert in the east; and the Northern Reach under the Frostpeak Range, with roads, bridges and a ruined watchtower. Click or tap to walk, chop, fish, cook (fires and ranges),
+mine, smelt, smith (five metals, up to adamant, 18 kinds of weapon and armour), craft (leather, gems, jewellery, pottery), carve and string your own
+bows, bake pies, stews, cakes and pizzas, fight 34 kinds of creature in melee, with a bow or with 16 spells, talk to people, do 58 quests (some
+ask you to dig, light candles or turn a key), bank your items, take the ferry or read a teleport scroll (to towns you have visited), and follow gold quest markers on the map. The dangerous Abyss holds the best rocks and trees in the game and the players who hunt there: the deeper you go the higher the Abyss level, and the wider the gap of combat levels at which players (the other adventurers among them) can attack each other; attack another player and a skull marks you for ten minutes; die skulled and you lose everything you carry. Over 320 items,
+including boots, gloves and the skill capes that heroes of level 99 can buy from the king; every weapon swings at its own speed.
+12 skills, bag, skills, gear (with rings and amulets), quests, a world map, combat and spellbook tabs, a how-to-play page, and procedural
+music and sound effects (volume in the Menu tab). Everything is offline and single-player, but the world is full of other "players": eight adventurers who start the game with you and train, quest and fight in real time, and dozens of others of every level at their trades.
 
 ## Run it
 
@@ -19,7 +23,7 @@ Windows: unzip `journey-windows.zip` and run `journey.exe` (keep the `assets` fo
 | | |
 |---|---|
 | Click / tap ground | walk there (A* pathfinding; click a wall and you walk next to it) |
-| Drag | rotate camera |
+| Drag | rotate camera (a drag that starts on the quest log or the how-to-play page scrolls it) |
 | Mouse wheel / pinch | zoom |
 | Arrow keys or Q / E | rotate; Up/Down or +/- zoom |
 | Tap a tree | walk up and chop it with your axe (logs go in the Bag tab, XP in the Skills tab) |

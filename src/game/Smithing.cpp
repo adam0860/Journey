@@ -6,11 +6,14 @@ namespace journey {
 
 namespace {
 
-const SmeltRecipe kSmelt[kTierCount] = {
+const SmeltRecipe kSmelt[kSmeltCount] = {
     {Tier::Bronze, Item::BronzeBar, 1, 6, {Item::CopperOre, Item::TinOre}, {1, 1}, 1.0f},
     {Tier::Iron, Item::IronBar, 15, 13, {Item::IronOre, Item::None}, {1, 0}, 0.5f},
     {Tier::Steel, Item::SteelBar, 30, 18, {Item::IronOre, Item::Coal}, {1, 2}, 1.0f},
     {Tier::Mithril, Item::MithrilBar, 50, 30, {Item::MithrilOre, Item::Coal}, {1, 4}, 1.0f},
+    {Tier::Adamant, Item::AdamantBar, 70, 48, {Item::AdamantOre, Item::Coal}, {1, 6}, 1.0f},
+    {Tier::Bronze, Item::SilverBar, 20, 14, {Item::SilverOre, Item::None}, {1, 0}, 1.0f},   // (the tier is ignored for these two)
+    {Tier::Bronze, Item::GoldBar, 40, 56, {Item::GoldOre, Item::None}, {1, 0}, 1.0f},
 };
 
 // Bars for each piece, and how many levels above the metal's first level you need to make it.
@@ -28,14 +31,25 @@ constexpr Shape kShape[kGearTypeCount] = {
     {3, 16},   // platelegs
     {5, 18},   // platebody
     {2, 5},    // pickaxe
+    {1, 1},    // axe (woodcutting)
+    {1, 2},    // arrows (fifteen from a bar)
+    {2, 6},    // scimitar
+    {3, 8},    // longsword
+    {2, 7},    // spear
+    {4, 14},   // warhammer
+    {2, 9},    // full helm
+    {2, 11},   // square shield
+    {3, 13},   // chainbody
+    {1, 5},    // boots
+    {1, 9},    // gauntlets
 };
-constexpr int kFirstLevel[kTierCount] = {1, 15, 30, 50};   // the level at which the metal can be worked
-constexpr int kXpPerBar[kTierCount] = {13, 25, 38, 50};
+constexpr int kFirstLevel[kTierCount] = {1, 15, 30, 50, 70};   // the level at which the metal can be worked
+constexpr int kXpPerBar[kTierCount] = {13, 25, 38, 50, 62};
 
 }  // namespace
 
-const SmeltRecipe& GetSmeltRecipe(Tier t) { return kSmelt[static_cast<int>(t)]; }
-Item BarFor(Tier t) { return kSmelt[static_cast<int>(t)].bar; }
+const SmeltRecipe& GetSmeltRecipe(Tier t) { return kSmelt[std::clamp(static_cast<int>(t), 0, kSmeltCount - 1)]; }
+Item BarFor(Tier t) { return kSmelt[std::clamp(static_cast<int>(t), 0, kSmeltCount - 1)].bar; }
 
 bool TierOfBar(Item bar, Tier* t) {
     for (int i = 0; i < kTierCount; ++i)
@@ -55,6 +69,7 @@ SmithRecipe GetSmithRecipe(Tier t, GearType g) {
     r.bars = kShape[gi].bars;
     r.level = kFirstLevel[ti] + kShape[gi].levelOffset;
     r.xp = r.bars * kXpPerBar[ti];
+    if (g == GearType::Arrows) r.yield = 15;
     return r;
 }
 

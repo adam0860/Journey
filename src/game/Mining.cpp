@@ -11,6 +11,11 @@ const RockInfo kRocks[kRockKindCount] = {
     {"Iron rocks",    "iron",    Item::IronOre,    15, 35, 10.0f, 0.35f, "Rocks containing iron ore."},
     {"Coal rocks",    "coal",    Item::Coal,       30, 50, 30.0f, 0.30f, "Rocks containing coal."},
     {"Mithril rocks", "mithril", Item::MithrilOre, 55, 80, 90.0f, 0.25f, "Rocks containing mithril ore."},
+    {"Clay rocks",    "clay",    Item::Clay,       1,  5,  5.0f,  0.45f, "Rocks of soft clay."},
+    {"Silver rocks",  "silver",  Item::SilverOre,  20, 40, 40.0f, 0.30f, "Rocks containing silver ore."},
+    {"Gold rocks",    "gold",    Item::GoldOre,    40, 65, 60.0f, 0.25f, "Rocks containing gold ore."},
+    {"Gem rocks",     "gems",    Item::UncutSapphire, 40, 65, 75.0f, 0.22f, "Rocks with uncut gems in them."},
+    {"Adamant rocks", "adamant", Item::AdamantOre, 70, 95, 150.0f, 0.20f, "Rocks containing adamant ore."},
 };
 }  // namespace
 
@@ -32,6 +37,17 @@ float MineChance(RockKind k, int level) {
     // the required level gives the base chance, and every level above it adds a little (never below the base, never above 92%)
     const float c = r.baseChance + 0.012f * static_cast<float>(std::max(0, level - r.level));
     return std::min(0.92f, c);
+}
+
+Item RockYield(RockKind k, double roll) {
+    if (k != RockKind::Gems) return GetRockInfo(k).ore;
+    if (roll < 0.22) return Item::UncutOpal;
+    if (roll < 0.38) return Item::UncutJade;
+    if (roll < 0.50) return Item::UncutRedTopaz;
+    if (roll < 0.72) return Item::UncutSapphire;
+    if (roll < 0.86) return Item::UncutEmerald;
+    if (roll < 0.96) return Item::UncutRuby;
+    return Item::UncutDiamond;
 }
 
 Item BestPickaxe(const Inventory& bag, int miningLevel) {
